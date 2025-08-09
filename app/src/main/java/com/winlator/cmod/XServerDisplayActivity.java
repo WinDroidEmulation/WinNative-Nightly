@@ -1298,55 +1298,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         
     }
 
-
-
-    private void createWineWrappers(Container container, ContentsManager contentsManager) {
-        String wineBinPath;
-        String wineLibPath;
-        String box64Path = imageFs.getRootDir().getPath() + "/usr/local/bin/box64";
-        String usrLocalBin = imageFs.getRootDir().getPath() + "/usr/local/bin";
-
-        // Determine if the container is using a contents profile Wine version
-        ContentProfile profile = contentsManager.getProfileByEntryName(container.getWineVersion());
-        if (profile != null && profile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE) {
-            File profileInstallDir = contentsManager.getInstallDir(this, profile);
-            wineBinPath = profileInstallDir.getPath() + "/" + profile.wineBinPath;
-            wineLibPath = profileInstallDir.getPath() + "/" + profile.wineLibPath;
-        } else {
-            wineBinPath = imageFs.getWinePath() + "/bin";
-            wineLibPath = imageFs.getWinePath() + "/lib/wine";
-        }
-
-        // Fetch stored environment variables
-        Map<String, String> envVars = EnvironmentManager.getEnvVars();
-
-        // Build environment export section dynamically
-        StringBuilder dynamicEnvExports = new StringBuilder("#!" + imageFs.getRootDir() + "/usr/bin/dash\n");
-        for (Map.Entry<String, String> entry : envVars.entrySet()) {
-            dynamicEnvExports.append("export ").append(entry.getKey()).append("=\"")
-                    .append(entry.getValue().replace("\"", "\\\"")).append("\"\n");
-        }
-
-        // Define the wine and wine64 wrappers to open explorer.exe with the desktop shell
-        String wineExecContent = dynamicEnvExports.toString() +
-                "exec \"" + box64Path + "\" \"" + wineBinPath + "/wine\" explorer.exe /desktop=shell," + xServer.screenInfo + " \"$@\"";
-        createWrapperScript(usrLocalBin + "/wine", wineExecContent);
-        createWrapperScript(usrLocalBin + "/wine64", wineExecContent);
-
-        // Define the wineserver wrapper with a different exec command
-        String wineserverContent = dynamicEnvExports.toString() +
-                "exec \"" + box64Path + "\" \"" + wineBinPath + "/wineserver\" \"$@\"";
-        createWrapperScript(usrLocalBin + "/wineserver", wineserverContent);
-    }
-
     private void createWrapperScript(String path, String content) {
         File scriptFile = new File(path);
         FileUtils.writeString(scriptFile, content);
         scriptFile.setExecutable(true);
     }
-
-    private static final int MAX_LOG_LINES = 1000;
-    private static final int BATCH_SIZE = 10;
 
     private void setupUI() {
         FrameLayout rootView = findViewById(R.id.FLXServerDisplay);
@@ -2221,11 +2177,5 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     public void setScreenEffectProfile(String screenEffectProfile) {
         this.screenEffectProfile = screenEffectProfile;
     }
-
-    // maybe we can remove this or maybe i will create it...
-//    public void clearContainerCache(Container container){//        File rootDir = container.getRootDir();
-//        final File cacheDir = new File(rootDir, ".cache");
-//        FileUtils.clear(cacheDir);
-//    }
 
 }
