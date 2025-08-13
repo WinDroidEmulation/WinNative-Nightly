@@ -9,6 +9,7 @@ import com.winlator.cmod.R;
 import com.winlator.cmod.SettingsFragment;
 import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.ContainerManager;
+import com.winlator.cmod.contents.AdrenotoolsManager;
 import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.DownloadProgressDialog;
 import com.winlator.cmod.core.FileUtils;
@@ -52,6 +53,14 @@ public abstract class ImageFsInstaller {
         }
     }
 
+    public static void installDriversFromAssets(final MainActivity activity) {
+        AdrenotoolsManager adrenotoolsManager = new AdrenotoolsManager(activity);
+        String[] adrenotoolsAssetDrivers = activity.getResources().getStringArray(R.array.wrapper_graphics_driver_version_entries);
+
+        for (String driver : adrenotoolsAssetDrivers)
+            adrenotoolsManager.extractDriverFromResources(driver);
+    }
+
     public static void installFromAssets(final MainActivity activity) {
         AppUtils.keepScreenOn(activity);
         ImageFs imageFs = ImageFs.find(activity);
@@ -78,6 +87,7 @@ public abstract class ImageFsInstaller {
 
             if (success) {
                 installWineFromAssets(activity);
+                installDriversFromAssets(activity);
                 imageFs.createImgVersionFile(LATEST_VERSION);
                 resetContainerImgVersions(activity);
             }
