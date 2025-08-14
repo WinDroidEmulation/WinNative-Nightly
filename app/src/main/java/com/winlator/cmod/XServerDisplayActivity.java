@@ -1564,7 +1564,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
         String maxDeviceMemory = graphicsDriverConfig.get("maxDeviceMemory");
         if (maxDeviceMemory != null && Integer.parseInt(maxDeviceMemory) > 0)
-            envVars.put("UTIL_LAYER_VMEM_MAX_SIZE", maxDeviceMemory);
+            envVars.put("WRAPPER_VMEM_MAX_SIZE", maxDeviceMemory);
 
         String presentMode = graphicsDriverConfig.get("presentMode");
         envVars.put("MESA_VK_WSI_PRESENT_MODE", presentMode);
@@ -1970,15 +1970,15 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         if (frameRating == null) return;
 
         if (property != null) {
-            if (frameRatingWindowId == -1 && (property.nameAsString().contains("_UTIL_LAYER") || property.nameAsString().contains("_MESA_DRV"))) {
+            if (frameRatingWindowId == -1 && property.nameAsString().contains("_MESA_DRV")) {
                 frameRatingWindowId = window.id;
                 Log.d("XServerDisplayActivity", "Showing hud for Window " + window.getName());
                 frameRating.update();
             }
-            if (property.nameAsString().contains("_UTIL_LAYER_ENGINE_NAME")) {
+            if (property.nameAsString().contains("_MESA_DRV_ENGINE_NAME")) {
                 frameRating.setRenderer(property.toString());
             }
-            if (property.nameAsString().contains("_UTIL_LAYER_GPU_NAME")) {
+            if (property.nameAsString().contains("_MESA_DRV_GPU_NAME")) {
                 frameRating.setGpuName(property.toString());
             }
         }
