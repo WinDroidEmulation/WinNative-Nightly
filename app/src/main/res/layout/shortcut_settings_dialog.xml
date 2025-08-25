@@ -541,12 +541,6 @@
                         android:text="@string/disable_xinput_for_shortcut" />
 
                     <CheckBox
-                        android:id="@+id/CBRelativeMouseMovement"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/relative_mouse_movement" />
-
-                    <CheckBox
                         android:id="@+id/CBTouchscreenMode"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"

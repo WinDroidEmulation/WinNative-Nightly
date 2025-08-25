@@ -413,9 +413,6 @@ public class ContainerDetailFragment extends Fragment {
             popupMenu.show();
         });
 
-        final CheckBox cbRelativeMouseMovement = view.findViewById(R.id.CBRelativeMouseMovement);
-        cbRelativeMouseMovement.setChecked(isEditMode() && container.isRelativeMouseMovement());
-
         final Spinner sStartupSelection = view.findViewById(R.id.SStartupSelection);
         byte previousStartupSelection = isEditMode() ? container.getStartupSelection() : -1;
         sStartupSelection.setSelection(previousStartupSelection != -1 ? previousStartupSelection : Container.STARTUP_SELECTION_ESSENTIAL);
@@ -496,7 +493,6 @@ public class ContainerDetailFragment extends Fragment {
                 boolean fullscreenStretched = cbFullscreenStretched.isChecked();
                 String cpuList = cpuListView.getCheckedCPUListAsString();
                 String cpuListWoW64 = cpuListViewWoW64.getCheckedCPUListAsString();
-                boolean isRelativeMouseMovement = cbRelativeMouseMovement.isChecked();
                 byte startupSelection = (byte) sStartupSelection.getSelectedItemPosition();
                 String box64Version = sBox64Version.getSelectedItem().toString();
                 String box64Preset = Box64PresetManager.getSpinnerSelectedId(sBox64Preset);
@@ -549,7 +545,6 @@ public class ContainerDetailFragment extends Fragment {
                     container.setShowFPS(showFPS);
                     container.setFullscreenStretched(fullscreenStretched);
                     container.setInputType(finalInputType);
-                    container.setRelativeMouseMovement(isRelativeMouseMovement);
                     container.setStartupSelection(startupSelection);
                     container.setBox64Version(box64Version);
                     container.setBox64Preset(box64Preset);
@@ -580,7 +575,6 @@ public class ContainerDetailFragment extends Fragment {
                     data.put("wincomponents", wincomponents);
                     data.put("drives", drives);
                     data.put("showFPS", showFPS);
-                    data.put("relativeMouseMovement", isRelativeMouseMovement);
                     data.put("fullscreenStretched", fullscreenStretched);
                     data.put("inputType", finalInputType);
                     data.put("startupSelection", startupSelection);

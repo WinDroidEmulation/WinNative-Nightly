@@ -634,14 +634,6 @@
                             android:id="@+id/SStartupSelection"
                             android:entries="@array/startup_selection_entries" />
 
-                        <CheckBox
-                            android:id="@+id/CBRelativeMouseMovement"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Enable relative mouse movement"
-                            android:checked="false"
-                            android:enabled="true"
-                            android:layout_marginTop="8dp" />
                     </LinearLayout>
 
                     <TextView

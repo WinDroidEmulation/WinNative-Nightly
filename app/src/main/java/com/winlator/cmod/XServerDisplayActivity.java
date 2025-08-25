@@ -168,7 +168,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     PreloaderDialog preloaderDialog = null;
     private Runnable configChangedCallback = null;
     private boolean isPaused = false;
-    private boolean isRelativeMouseMovement;
+    private boolean isRelativeMouseMovement = false;
 
     // Inside the XServerDisplayActivity class
     private SensorManager sensorManager;
@@ -442,7 +442,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         screenSize = container.getScreenSize();
         winHandler.setInputType((byte) container.getInputType());
         lc_all = container.getLC_ALL();
-        isRelativeMouseMovement = container.isRelativeMouseMovement();
 
         // Log the entire intent to verify the extras
         Intent intent = getIntent();
@@ -460,7 +459,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             String inputType = shortcut.getExtra("inputType");
             if (!inputType.isEmpty()) winHandler.setInputType(Byte.parseByte(inputType));
             String xinputDisabledString = shortcut.getExtra("disableXinput", "false");
-            isRelativeMouseMovement = shortcut.getExtra("relativeMouseMovement", container.isRelativeMouseMovement() ? "1" : "0").equals("1") ? true : false;
             xinputDisabledFromShortcut = parseBoolean(xinputDisabledString);
             // Pass the value to WinHandler
             winHandler.setXInputDisabled(xinputDisabledFromShortcut);
@@ -832,6 +830,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             case R.id.main_menu_input_controls:
                 showInputControlsDialog();
                 drawerLayout.closeDrawers();
+                break;
+            case R.id.main_menu_relative_mouse_movement:
+                isRelativeMouseMovement = !isRelativeMouseMovement;
+                drawerLayout.closeDrawers();
+                xServer.setRelativeMouseMovement(isRelativeMouseMovement);
                 break;
             case R.id.main_menu_toggle_fullscreen:
                 renderer.toggleFullscreen();
@@ -1211,8 +1214,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             String simTouchScreen = shortcut.getExtra("simTouchScreen");
             touchpadView.setSimTouchScreen(simTouchScreen.equals("1"));
         }
-
-        xServer.setRelativeMouseMovement(isRelativeMouseMovement);
 
         AppUtils.observeSoftKeyboardVisibility(drawerLayout, renderer::setScreenOffsetYRelativeToCursor);
     }

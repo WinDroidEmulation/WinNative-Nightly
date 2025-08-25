@@ -70,7 +70,6 @@ public class Container {
     private String fexcoreVersion = DefaultVersion.FEXCORE;
     private String box64Version;
     private String emulator;
-    private boolean isRelativeMouseMovement;
 
     private ContainerManager containerManager;
 
@@ -189,14 +188,6 @@ public class Container {
 
     public void setControllerMapping(String controllerMapping) {
         this.controllerMapping = controllerMapping;
-    }
-
-    public boolean isRelativeMouseMovement() {
-        return this.isRelativeMouseMovement;
-    }
-
-    public void setRelativeMouseMovement(boolean isRelativeMouseMovement) {
-        this.isRelativeMouseMovement = isRelativeMouseMovement;
     }
 
     public boolean isFullscreenStretched() { return fullscreenStretched; }
@@ -393,7 +384,6 @@ public class Container {
             data.put("wincomponents", wincomponents);
             data.put("drives", drives);
             data.put("showFPS", showFPS);
-            data.put("relativeMouseMovement", isRelativeMouseMovement);
             data.put("fullscreenStretched", fullscreenStretched);
             data.put("inputType", inputType);
             data.put("startupSelection", startupSelection);
@@ -459,9 +449,6 @@ public class Container {
                     break;
                 case "showFPS" :
                     setShowFPS(data.getBoolean(key));
-                    break;
-                case "relativeMouseMovement":
-                    setRelativeMouseMovement(data.getBoolean(key));
                     break;
                 case "fullscreenStretched" :
                     setFullscreenStretched(data.getBoolean(key));
