@@ -264,7 +264,7 @@ public class ShortcutsFragment extends Fragment {
         private void exportShortcutToFrontend(Shortcut shortcut) {
             // Check for a custom frontend export path in shared preferences
             SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(getContext());
-            String uriString = sharedPreferences.getString("frontend_export_uri", null);
+            String uriString = sharedPreferences.getString("winlator_path_uri", null);
 
             File frontendDir;
 
@@ -279,10 +279,10 @@ public class ShortcutsFragment extends Fragment {
                 }
 
                 // Convert DocumentFile to a File object for further processing
-                frontendDir = new File(FileUtils.getFilePathFromUri(getContext(), folderUri));
+                frontendDir = new File(FileUtils.getFilePathFromUri(getContext(), folderUri), "Frontend");
             } else {
                 // Default to Downloads\Winlator\Frontend if no custom URI is set
-                frontendDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Winlator/Frontend");
+                frontendDir = new File(SettingsFragment.DEFAULT_WINLATOR_PATH, "Frontend");
                 if (!frontendDir.exists() && !frontendDir.mkdirs()) {
                     Toast.makeText(getContext(), "Failed to create default directory", Toast.LENGTH_SHORT).show();
                     return;

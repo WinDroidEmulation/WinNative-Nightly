@@ -70,9 +70,9 @@ import java.util.concurrent.Executors;
 
 public class SettingsFragment extends Fragment {
     public static final String DEFAULT_WINE_DEBUG_CHANNELS = "warn,err,fixme";
+    public static final String DEFAULT_WINLATOR_PATH = Environment.getExternalStorageDirectory().getPath() + "/Winlator";
     private Callback<Uri> installSoundFontCallback;
     private PreloaderDialog preloaderDialog;
-    public static final String DEFAULT_EXPORT_PATH = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + "/Winlator/Frontend";
     private SharedPreferences preferences;
 
 	// Disable or enable True Mouse Control
@@ -95,7 +95,7 @@ public class SettingsFragment extends Fragment {
     private CheckBox cbDarkMode;
     boolean isDarkMode;
 
-    private static final int REQUEST_CODE_FRONTEND_EXPORT_PATH = 1002;
+    private static final int REQUEST_CODE_WINLATOR_PATH = 1002;
     private static final int REQUEST_CODE_INSTALL_SOUNDFONT = 1001;
 
     @Override
@@ -219,28 +219,23 @@ public class SettingsFragment extends Fragment {
         Button btConfigureAnalogSticks = view.findViewById(R.id.BTConfigureAnalogSticks);
         btConfigureAnalogSticks.setOnClickListener(v -> showAnalogStickConfigDialog());
 
+        Button btnChooseWinlatorPath = view.findViewById(R.id.BTChooseWinlatorPath);
+        TextView tvWinlatorPath = view.findViewById(R.id.TVWinlatorPath);
 
-        // Configure Frontend Export Path button
-
-        Button btnChooseFrontendExportPath = view.findViewById(R.id.BTChooseFrontendExportPath);
-        TextView tvFrontendExportPath = view.findViewById(R.id.TVFrontendExportPath);
-
-        // Get the saved export path from SharedPreferences or use the default
-        String savedUriString = preferences.getString("frontend_export_uri", null);
+        String savedUriString = preferences.getString("winlator_path_uri", null);
         if (savedUriString == null) {
             // No saved path, set default path
-            tvFrontendExportPath.setText(DEFAULT_EXPORT_PATH);
+            tvWinlatorPath.setText(DEFAULT_WINLATOR_PATH);
         } else {
             // Parse and display the saved URI path
             Uri savedUri = Uri.parse(savedUriString);
             String displayPath = FileUtils.getFilePathFromUri(getContext(), savedUri);
-            tvFrontendExportPath.setText(displayPath != null ? displayPath : savedUriString);
+            tvWinlatorPath.setText(displayPath != null ? displayPath : savedUriString);
         }
 
-        // Set the click listener for the "Choose Frontend Export Path" button
-        btnChooseFrontendExportPath.setOnClickListener(v -> {
+        btnChooseWinlatorPath.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE); // Launch File Picker for directory selection
-            startActivityForResult(intent, REQUEST_CODE_FRONTEND_EXPORT_PATH);
+            startActivityForResult(intent, REQUEST_CODE_WINLATOR_PATH);
         });
 
         final Spinner sBox64Preset = view.findViewById(R.id.SBox64Preset);
@@ -866,11 +861,11 @@ public class SettingsFragment extends Fragment {
 
             if (uri != null) {
                 switch (requestCode) {
-                    // Case for FilePicker to select frontend export path
-                    case REQUEST_CODE_FRONTEND_EXPORT_PATH:
+
+                    case REQUEST_CODE_WINLATOR_PATH:
                         // Save the selected URI as a string in SharedPreferences
                         SharedPreferences.Editor editor = preferences.edit();
-                        editor.putString("frontend_export_uri", uri.toString());
+                        editor.putString("winlator_path_uri", uri.toString());
                         editor.apply();
 
                         // Take persistable URI permission
@@ -888,8 +883,8 @@ public class SettingsFragment extends Fragment {
                         String fullPath = FileUtils.getFilePathFromUri(getContext(), uri);
 
                         // Update the TextView with the absolute path or URI string if conversion fails
-                        TextView tvFrontendExportPath = getView().findViewById(R.id.TVFrontendExportPath);
-                        tvFrontendExportPath.setText(fullPath != null ? fullPath : uri.toString());
+                        TextView tvWinlatorPath = getView().findViewById(R.id.TVWinlatorPath);
+                        tvWinlatorPath.setText(fullPath != null ? fullPath : uri.toString());
                         break;
 
                     // Case for installing a SoundFont

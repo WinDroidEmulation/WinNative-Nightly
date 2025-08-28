@@ -134,7 +134,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Frontend Export Path" />
+                        android:text="Winlator Path" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -142,13 +142,12 @@
                         android:orientation="horizontal"
                         android:gravity="center_vertical">
                         <TextView
-                            android:id="@+id/TVFrontendExportPath"
+                            android:id="@+id/TVWinlatorPath"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="Default Path: Downloads/Winlator/Frontend" />
+                            android:layout_weight="1" />
                         <Button
-                            android:id="@+id/BTChooseFrontendExportPath"
+                            android:id="@+id/BTChooseWinlatorPath"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Choose Path" />
@@ -157,7 +156,7 @@
                 <TextView
                     android:id="@+id/TVShortcutSettings"
                     style="@style/FieldSetLabel"
-                    android:text="Shortcut Settings" />
+                    android:text="Path Settings" />
             </FrameLayout>
 
 
