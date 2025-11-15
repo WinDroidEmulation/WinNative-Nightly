@@ -567,12 +567,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(false);
 
-        if (Build.VERSION.SDK_INT >= 33) {
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 0);
-            }
-        }
-
         NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, builder.build());
 
         Runnable runnable = () -> {
