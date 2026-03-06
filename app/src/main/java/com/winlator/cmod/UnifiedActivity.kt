@@ -281,7 +281,9 @@ class UnifiedActivity : ComponentActivity() {
 
             Spacer(Modifier.width(8.dp))
 
-            // ── Right: Controller button with circle shadow ──
+            val isStore = tabs[selectedIdx].label.contains("Store", ignoreCase = true)
+
+            // ── Right: Action button with circle shadow ──
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -290,19 +292,25 @@ class UnifiedActivity : ComponentActivity() {
                     .background(SurfaceDark),
                 contentAlignment = Alignment.Center
             ) {
-                IconButton(onClick = {
-                    // Open per-game settings (container/shortcut config) for selected game
-                    val intent = Intent(context, MainActivity::class.java)
-                    intent.putExtra("return_to_unified", true)
-                    // Pass the currently selected game's app ID if available
-                    val appId = selectedSteamAppId
-                    if (appId > 0) {
-                        intent.putExtra("create_shortcut_for_app_id", appId)
-                        intent.putExtra("create_shortcut_for_app_name", selectedSteamAppName)
+                if (isStore) {
+                    IconButton(onClick = { SteamService.requestSync() }, modifier = Modifier.size(44.dp)) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh Store", tint = TextPrimary, modifier = Modifier.size(24.dp))
                     }
-                    context.startActivity(intent)
-                }, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.Default.Tune, contentDescription = "Game Settings", tint = TextPrimary, modifier = Modifier.size(24.dp))
+                } else {
+                    IconButton(onClick = {
+                        // Open per-game settings (container/shortcut config) for selected game
+                        val intent = Intent(context, MainActivity::class.java)
+                        intent.putExtra("return_to_unified", true)
+                        // Pass the currently selected game's app ID if available
+                        val appId = selectedSteamAppId
+                        if (appId > 0) {
+                            intent.putExtra("create_shortcut_for_app_id", appId)
+                            intent.putExtra("create_shortcut_for_app_name", selectedSteamAppName)
+                        }
+                        context.startActivity(intent)
+                    }, modifier = Modifier.size(44.dp)) {
+                        Icon(Icons.Default.Tune, contentDescription = "Game Settings", tint = TextPrimary, modifier = Modifier.size(24.dp))
+                    }
                 }
             }
 
@@ -612,17 +620,6 @@ class UnifiedActivity : ComponentActivity() {
         val context = LocalContext.current
 
         Column(Modifier.fillMaxSize().padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("YOUR STEAM LIBRARY", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                IconButton(onClick = { SteamService.requestSync() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Sync Library", tint = TextPrimary)
-                }
-            }
-            Spacer(Modifier.height(16.dp))
 
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 150.dp),
@@ -652,7 +649,7 @@ class UnifiedActivity : ComponentActivity() {
         Column(
             modifier = Modifier
                 .width(160.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(16.dp))
                 .background(CardDark)
                 .clickable(onClick = onClick)
         ) {
@@ -664,7 +661,7 @@ class UnifiedActivity : ComponentActivity() {
                 AsyncImage(
                     model = ImageRequest.Builder(context).data(imageUrl).crossfade(300).build(),
                     contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().height(220.dp),
+                    modifier = Modifier.fillMaxWidth().height(165.dp),
                     contentScale = ContentScale.Crop
                 )
 
