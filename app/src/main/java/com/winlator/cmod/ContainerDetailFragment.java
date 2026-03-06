@@ -673,7 +673,9 @@ public class ContainerDetailFragment extends Fragment {
                             AppUtils.showToast(context, R.string.unable_to_install_system_files);
                         }
                         preloaderDialog.close();
-                        getActivity().onBackPressed();
+                        if (getActivity() != null) {
+                            getActivity().onBackPressed();
+                        }
                     });
                 }
             } catch (JSONException e) {

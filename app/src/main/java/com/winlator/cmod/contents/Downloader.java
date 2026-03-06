@@ -11,7 +11,11 @@ import java.net.URLConnection;
 
 public class Downloader {
 
-    public static boolean downloadFile(String address, File file) {
+    public interface DownloadListener {
+        void onProgress(int percent);
+    }
+
+    public static boolean downloadFile(String address, File file, DownloadListener listener) {
         try {
             URL url = new URL(address);
             URLConnection connection = url.openConnection();
@@ -23,11 +27,17 @@ public class Downloader {
             // Output stream
             OutputStream output = new FileOutputStream(file.getAbsolutePath());
 
-            byte[] data = new byte[1024];
+            byte[] data = new byte[8192];
 
             int count;
+            long total = 0;
+            int lengthOfFile = connection.getContentLength();
             while ((count = input.read(data)) != -1) {
+                total += count;
                 output.write(data, 0, count);
+                if (listener != null && lengthOfFile > 0) {
+                    listener.onProgress((int) ((total * 100) / lengthOfFile));
+                }
             }
 
             // flushing output

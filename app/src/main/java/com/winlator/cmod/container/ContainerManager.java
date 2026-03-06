@@ -119,9 +119,15 @@ public class ContainerManager {
     public Container createContainer(JSONObject data, ContentsManager contentsManager) {
         try {
             int id = maxContainerId + 1;
-            data.put("id", id);
+            File containerDir = new File(homeDir, ImageFs.USER + "-" + id);
+            
+            // If a previous creation crashed, the directory might exist but not be registered.
+            while (containerDir.exists()) {
+                id++;
+                containerDir = new File(homeDir, ImageFs.USER + "-" + id);
+            }
 
-            File containerDir = new File(homeDir, ImageFs.USER+"-"+id);
+            data.put("id", id);
             if (!containerDir.mkdirs()) return null;
 
             Container container = new Container(id, this);

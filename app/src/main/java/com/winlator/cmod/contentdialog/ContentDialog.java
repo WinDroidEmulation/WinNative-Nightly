@@ -55,7 +55,7 @@ public class ContentDialog extends Dialog {
         if (layoutResId > 0) {
             FrameLayout frameLayout = contentView.findViewById(R.id.FrameLayout);
             frameLayout.setVisibility(View.VISIBLE);
-            View view = LayoutInflater.from(context).inflate(layoutResId, frameLayout, false);
+            View view = LayoutInflater.from(getContext()).inflate(layoutResId, frameLayout, false);
             frameLayout.addView(view);
         }
 

@@ -193,39 +193,21 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
     @Override
     public void onBackPressed() {
-        if (getIntent().getBooleanExtra("return_to_unified", false)) {
-            // Check if we're on the root containers list — only then finish.
-            // If we're on a detail fragment (creating/editing container), go back to containers list.
-            FragmentManager fm = getSupportFragmentManager();
-            List<Fragment> fragments = fm.getFragments();
-            boolean onContainersList = false;
-            for (Fragment f : fragments) {
-                if (f instanceof ContainersFragment && f.isVisible()) {
-                    onContainersList = true;
-                    break;
-                }
-            }
-            if (onContainersList) {
-                finish();
-            } else {
-                // Navigate back to containers list
-                show(new ContainersFragment(), true);
-            }
+        FragmentManager fm = getSupportFragmentManager();
+        
+        // If there are fragments in the backstack (like ContainerDetailFragment), pop them normally!
+        if (fm.getBackStackEntryCount() > 0) {
+            fm.popBackStack();
             return;
         }
 
-        FragmentManager fragmentManager = getSupportFragmentManager();
-        List<Fragment> fragments = fragmentManager.getFragments();
-        for (Fragment fragment : fragments) {
-            if (fragment instanceof ContainersFragment && fragment.isVisible()) {
-                finish();
-                return;
-            }
+        // If backstack is empty, we are at the root fragment (ContainersFragment, Settings, etc).
+        if (getIntent().getBooleanExtra("return_to_unified", false)) {
+            finish();
+            return;
         }
-        if (!editInputControls)
-            show(new ContainersFragment(), true);  // Pass `true` to trigger the reverse animation
-        else
-            super.onBackPressed();
+
+        super.onBackPressed();
     }
 
     private boolean requestAppPermissions() {

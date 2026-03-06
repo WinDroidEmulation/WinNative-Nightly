@@ -38,6 +38,7 @@ import com.winlator.cmod.contents.ContentProfile;
 import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.contents.Downloader;
 import com.winlator.cmod.core.AppUtils;
+import com.winlator.cmod.core.DownloadProgressDialog;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.PreloaderDialog;
 
@@ -233,7 +234,14 @@ public class ContentsFragment extends Fragment {
                     }
                 };
                 Executors.newSingleThreadExecutor().execute(() -> {
-                    manager.extraContentFile(data.getData(), callback);
+                    try {
+                        manager.extraContentFile(data.getData(), callback);
+                    } catch (Exception e) {
+                        requireActivity().runOnUiThread(() -> {
+                            preloaderDialog.closeOnUiThread();
+                            AppUtils.showToast(getContext(), R.string.unable_to_import_profile);
+                        });
+                    }
                 });
             } catch (Exception e) {
                 preloaderDialog.closeOnUiThread();
@@ -336,23 +344,35 @@ public class ContentsFragment extends Fragment {
                 });
                 selectionMenu.show();
             });
-            holder.ibDownload.setVisibility((profile.remoteUrl != null) && (holder.progressBar.getVisibility() == View.GONE) ? View.VISIBLE : View.GONE);
+            holder.ibDownload.setVisibility((profile.remoteUrl != null) ? View.VISIBLE : View.GONE);
             holder.ibDownload.setOnClickListener(v -> {
                 holder.ibDownload.setVisibility(View.GONE);
-                holder.progressBar.setVisibility(View.VISIBLE);
+
+                DownloadProgressDialog downloadDialog = new DownloadProgressDialog(getActivity());
+                downloadDialog.show("Downloading " + profile.verName);
 
                 Intent intent = new Intent();
                 intent.setData(Uri.parse(profile.remoteUrl));
                 new Thread(() -> {
                     long timestamp = System.currentTimeMillis();
                     File output = new File(getContext().getCacheDir(), "temp_" + timestamp);
-                    if (Downloader.downloadFile(profile.remoteUrl, output)) {
+                    
+                    boolean success = Downloader.downloadFile(profile.remoteUrl, output, percent -> {
+                        getActivity().runOnUiThread(() -> downloadDialog.setProgress(percent));
+                    });
+                    
+                    if (success) {
                         intent.setData(Uri.parse(output.getAbsolutePath()));
                     }
+
                     getActivity().runOnUiThread(() -> {
-                        holder.progressBar.setVisibility(View.GONE);
+                        downloadDialog.close();
                         holder.ibDownload.setVisibility(View.VISIBLE);
-                        onActivityResult(MainActivity.OPEN_FILE_REQUEST_CODE, Activity.RESULT_OK, intent);
+                        if (success) {
+                            onActivityResult(MainActivity.OPEN_FILE_REQUEST_CODE, Activity.RESULT_OK, intent);
+                        } else {
+                            AppUtils.showToast(getContext(), "Download failed.");
+                        }
                     });
                 }).start();
             });

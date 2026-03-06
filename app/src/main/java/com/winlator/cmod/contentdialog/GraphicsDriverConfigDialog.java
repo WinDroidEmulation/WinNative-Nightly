@@ -164,18 +164,18 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
 
         HashMap<String, String> config = parseGraphicsDriverConfig(graphicsDriverConfig);
 
-        String vulkanVersion = config.get("vulkanVersion");
-        String initialVersion = config.get("version");
-        String blExtensions = config.get("blacklistedExtensions");
-        String gpuName = config.get("gpuName");
-        String maxDeviceMemory = config.get("maxDeviceMemory");
-        String syncFrame = config.get("syncFrame");
-        String disablePresentWait = config.get("disablePresentWait");
-        String presentMode = config.get("presentMode");
-        String resourceType = config.get("resourceType");
-        String bcnEmulation = config.get("bcnEmulation");
-        String bcnEmulationType = config.get("bcnEmulationType");
-        String bcnEmulationCache = config.get("bcnEmulationCache");
+        String vulkanVersion = config.get("vulkanVersion") != null ? config.get("vulkanVersion") : "1.3";
+        String initialVersion = config.get("version") != null ? config.get("version") : "";
+        String blExtensions = config.get("blacklistedExtensions") != null ? config.get("blacklistedExtensions") : "";
+        String gpuName = config.get("gpuName") != null ? config.get("gpuName") : "Device";
+        String maxDeviceMemory = config.get("maxDeviceMemory") != null ? config.get("maxDeviceMemory") : "0";
+        String syncFrame = config.get("syncFrame") != null ? config.get("syncFrame") : "0";
+        String disablePresentWait = config.get("disablePresentWait") != null ? config.get("disablePresentWait") : "0";
+        String presentMode = config.get("presentMode") != null ? config.get("presentMode") : "mailbox";
+        String resourceType = config.get("resourceType") != null ? config.get("resourceType") : "auto";
+        String bcnEmulation = config.get("bcnEmulation") != null ? config.get("bcnEmulation") : "auto";
+        String bcnEmulationType = config.get("bcnEmulationType") != null ? config.get("bcnEmulationType") : "compute";
+        String bcnEmulationCache = config.get("bcnEmulationCache") != null ? config.get("bcnEmulationCache") : "0";
 
         // Update the selectedVersion whenever the user selects a different version
         sVersion.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -188,7 +188,7 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
                 mscAvailableExtensions.setItems(availableExtensions, "Extensions");
                 mscAvailableExtensions.setSelectedItems(availableExtensions);
 
-                if(selectedVersion.equals(initialVersion))
+                if(selectedVersion != null && selectedVersion.equals(initialVersion))
                     blacklistedExtensions = blExtensions;
 
                 String[] bl = blacklistedExtensions.split("\\,");

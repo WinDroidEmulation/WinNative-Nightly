@@ -35,7 +35,14 @@ public class DownloadProgressDialog {
     }
 
     public void show() {
-        show(null);
+        show((Runnable) null);
+    }
+
+    public void show(String text) {
+        show(0, null);
+        if (text != null) {
+            ((TextView)dialog.findViewById(R.id.TextView)).setText(text);
+        }
     }
 
     public void show(int textResId) {
