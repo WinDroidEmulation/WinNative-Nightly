@@ -114,16 +114,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         if (!requestAppPermissions()) {
             ImageFsInstaller.installIfNeeded(this);
         }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-            showAllFilesAccessDialog();
-        }
-
-        if (Build.VERSION.SDK_INT >= 33) {
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 0);
-            }
-        }
     }
 
     @Override
@@ -165,19 +155,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             onNavigationItemSelected(navigationView.getMenu().findItem(menuItemId));
             navigationView.setCheckedItem(menuItemId);
         }
-    }
-
-    private void showAllFilesAccessDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("All Files Access Required")
-                .setMessage("In order to grant access to additional storage devices such as USB storage device, the All Files Access permission must be granted. Press Okay to grant All Files Access in your Android Settings.")
-                .setPositiveButton("Okay", (dialog, which) -> {
-                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                    intent.setData(Uri.parse("package:" + getPackageName()));
-                    startActivity(intent);
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
     }
 
     @Override

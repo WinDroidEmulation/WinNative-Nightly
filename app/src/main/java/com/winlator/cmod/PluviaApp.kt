@@ -25,10 +25,12 @@ class PluviaApp : Application() {
         // Initialize database
         com.winlator.cmod.db.PluviaDatabase.init(this)
 
-        // Start SteamService
+        // Start SteamService only if setup is complete to avoid premature permission popups
         try {
-            val intent = android.content.Intent(this, com.winlator.cmod.steam.service.SteamService::class.java)
-            startForegroundService(intent)
+            if (SetupWizardActivity.isSetupComplete(this)) {
+                val intent = android.content.Intent(this, com.winlator.cmod.steam.service.SteamService::class.java)
+                startForegroundService(intent)
+            }
         } catch (e: Exception) {
             Log.e("PluviaApp", "Failed to start SteamService", e)
         }
