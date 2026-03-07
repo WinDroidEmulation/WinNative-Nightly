@@ -83,9 +83,9 @@ import androidx.compose.ui.text.style.TextAlign
 // ─── Color palette ───────────────────────────────────────────────────
 private val BgDark = Color(0xFF0D1117)
 private val SurfaceDark = Color(0xFF161B22)
-private val CardDark = Color(0xFF1F2922)
-private val Accent = Color(0xFF238636)
-private val AccentGlow = Color(0xFF3FB950)
+private val CardDark = Color(0xFF1C2333)
+private val Accent = Color(0xFF2F81F7)
+private val AccentGlow = Color(0xFF58A6FF)
 private val TextPrimary = Color(0xFFE6EDF3)
 private val TextSecondary = Color(0xFF8B949E)
 private val StatusOnline = Color(0xFF3FB950)

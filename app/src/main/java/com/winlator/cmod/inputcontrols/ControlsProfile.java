@@ -52,6 +52,30 @@ public class ControlsProfile implements Comparable<ControlsProfile> {
     }
 
     public boolean isVirtualGamepad() {
+        if (!elementsLoaded && !virtualGamepad) {
+            File file = getProfileFile(context, id);
+            if (file.isFile()) {
+                try {
+                    JSONObject profileJSONObject = new JSONObject(FileUtils.readString(file));
+                    JSONArray elementsJSONArray = profileJSONObject.getJSONArray("elements");
+                    for (int i = 0; i < elementsJSONArray.length(); i++) {
+                        JSONObject elementJSONObject = elementsJSONArray.getJSONObject(i);
+                        boolean hasGamepadBinding = true;
+                        JSONArray bindingsJSONArray = elementJSONObject.getJSONArray("bindings");
+                        for (int j = 0; j < bindingsJSONArray.length(); j++) {
+                            Binding binding = Binding.fromString(bindingsJSONArray.getString(j));
+                            if (!binding.isGamepad()) hasGamepadBinding = false;
+                        }
+                        if (hasGamepadBinding) {
+                            virtualGamepad = true;
+                            break;
+                        }
+                    }
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
         return virtualGamepad;
     }
 

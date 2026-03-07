@@ -451,7 +451,7 @@ public class WinHandler {
 
                 final boolean enabled = currentController != null || useVirtualGamepad;
 
-                if (enabled && notify) {
+                if (notify) {
                     if (!gamepadClients.contains(port)) gamepadClients.add(port);
                 } else {
                     gamepadClients.remove(Integer.valueOf(port));
