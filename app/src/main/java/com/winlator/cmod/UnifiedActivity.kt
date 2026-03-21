@@ -38,6 +38,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import com.winlator.cmod.widget.chasingBorder
+import com.winlator.cmod.core.RefreshRateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -121,6 +122,7 @@ import com.winlator.cmod.steam.events.AndroidEvent
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import `in`.dragonbra.javasteam.enums.EPersonaState
@@ -346,6 +348,8 @@ class UnifiedActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Maintain the user's preferred refresh rate when returning to this activity
+        applyPreferredRefreshRate()
         // Ensure all store services are running when returning from a game or other activity
         if (GOGService.hasStoredCredentials(this) && !GOGService.isRunning) {
             GOGService.start(this)
@@ -357,6 +361,55 @@ class UnifiedActivity : ComponentActivity() {
             SteamService.start(this)
         }
         libraryRefreshSignal++
+    }
+
+    /**
+     * Apply the user's refresh rate preference to this activity's window.
+     * Reads the global override from SharedPreferences; 0 means use device max.
+     */
+    private fun applyPreferredRefreshRate() {
+        RefreshRateUtils.applyPreferredRefreshRate(this)
+    }
+
+    @Composable
+    private fun rememberUnifiedTargetRefreshHz(refreshSignal: Int): Int {
+        val targetRefreshHz = remember(refreshSignal) {
+            RefreshRateUtils.resolvePreferredRefreshRate(
+                this@UnifiedActivity,
+                RefreshRateUtils.getSavedGlobalRefreshRateOverride(this@UnifiedActivity)
+            ).roundToInt().coerceAtLeast(1)
+        }
+        return targetRefreshHz
+    }
+
+    @Composable
+    private fun BoxScope.UnifiedRedrawDriver(targetRefreshHz: Int) {
+        val targetFrameIntervalNanos = remember(targetRefreshHz) {
+            1_000_000_000L / targetRefreshHz.toLong().coerceAtLeast(1L)
+        }
+        var pulseAlpha by remember(targetRefreshHz) { mutableFloatStateOf(0.004f) }
+
+        LaunchedEffect(targetRefreshHz) {
+            var lastRedrawNanos = 0L
+            var highAlpha = false
+            while (isActive) {
+                withFrameNanos { frameTimeNanos ->
+                    if (lastRedrawNanos == 0L || frameTimeNanos - lastRedrawNanos >= targetFrameIntervalNanos) {
+                        highAlpha = !highAlpha
+                        pulseAlpha = if (highAlpha) 0.008f else 0.004f
+                        lastRedrawNanos = frameTimeNanos
+                    }
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .size(1.dp)
+                .graphicsLayer(alpha = pulseAlpha)
+                .background(Color.White)
+        )
     }
 
     override fun dispatchGenericMotionEvent(event: android.view.MotionEvent): Boolean {
@@ -450,6 +503,9 @@ class UnifiedActivity : ComponentActivity() {
             GOGService.start(this)
         }
 
+        // Apply user's preferred refresh rate on launch
+        applyPreferredRefreshRate()
+
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.navigationBarColor = 0xFF0D1117.toInt()
 
@@ -503,6 +559,7 @@ class UnifiedActivity : ComponentActivity() {
         var iconRefreshKey by remember { mutableIntStateOf(0) }
         
         val currentRefreshSignal = this@UnifiedActivity.libraryRefreshSignal
+        val targetRefreshHz = rememberUnifiedTargetRefreshHz(currentRefreshSignal)
         LaunchedEffect(currentRefreshSignal) {
             libraryRefreshKey++
             iconRefreshKey++
@@ -747,126 +804,129 @@ class UnifiedActivity : ComponentActivity() {
             }
         }
 
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            drawerContent = {
-                DrawerContent(
-                    persona = persona,
-                    context = context,
-                    scope = scope,
-                    aioMode = aioMode,
-                    onAioToggle = { aioMode = it; PrefManager.aioStoreMode = it },
-                    storeVisible = storeVisible,
-                    contentFilters = contentFilters,
-                    libraryLayoutMode = libraryLayoutMode,
-                    onLibraryLayoutSelected = {
-                        libraryLayoutMode = it
-                        PrefManager.libraryLayoutMode = it.name
-                    },
-                    onClose = { scope.launch { drawerState.close() } }
-                )
-            },
-            scrimColor = Color.Black.copy(alpha = 0.5f),
-            gesturesEnabled = true
-        ) {
-        Box(Modifier.fillMaxSize().background(BgDark)) {
-            Scaffold(
-                containerColor = BgDark,
-                topBar = { TopBar(tabs, selectedIdx, { selectedIdx = it }, persona, context, scope, isControllerConnected, isPS, isLibraryTab, searchQueryTfv, { searchQueryTfv = it }, onFilterClicked = { scope.launch { drawerState.open() } }) {
-                    if (selectedLibrarySource == "GOG") {
-                        globalSettingsGogGame = gogApps.find { it.id == selectedGogGameId }
-                    } else {
-                        // Try Steam apps first, then fall back to custom or epic pseudo-apps
-                        globalSettingsApp = (steamApps.find { it.id == selectedSteamAppId }
-                        ?: if (selectedSteamAppId < 0) {
-                            // Build a pseudo SteamApp for the custom game
-                            SteamApp(
-                                id = selectedSteamAppId,
-                                name = selectedSteamAppName,
-                                developer = "Custom"
-                            )
-                        } else if (selectedSteamAppId >= 2000000000) {
-                            val epicId = selectedSteamAppId - 2000000000
-                            val epic = epicApps.find { it.id == epicId }
-                            SteamApp(
-                                id = selectedSteamAppId,
-                                name = selectedSteamAppName,
-                                developer = epic?.developer ?: "Epic Games",
-                                gameDir = epic?.installPath ?: ""
-                            )
-                        } else null)
-                    }
-                } }
-            ) { padding ->
-                LaunchedEffect(selectedIdx, tabs) {
-                    currentTabKey = tabs.getOrNull(selectedIdx)?.key ?: "library"
-                    // Reset store focus when switching tabs
-                    storeFocusIndex.value = 0
-                    storeItemClickCallback = null
-                }
-
-                Box(Modifier.padding(padding).fillMaxSize().background(BgDark)) {
-                    val key = tabs.getOrNull(selectedIdx)?.key ?: "library"
-
-                    AnimatedContent(
-                        targetState = key,
-                        transitionSpec = {
-                            fadeIn(tween(200)) togetherWith fadeOut(tween(150))
+        Box(modifier = Modifier.fillMaxSize()) {
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    DrawerContent(
+                        persona = persona,
+                        context = context,
+                        scope = scope,
+                        aioMode = aioMode,
+                        onAioToggle = { aioMode = it; PrefManager.aioStoreMode = it },
+                        storeVisible = storeVisible,
+                        contentFilters = contentFilters,
+                        libraryLayoutMode = libraryLayoutMode,
+                        onLibraryLayoutSelected = {
+                            libraryLayoutMode = it
+                            PrefManager.libraryLayoutMode = it.name
                         },
-                        label = "tabContent"
-                    ) { animatedKey ->
-                        when (animatedKey) {
-                        "library" -> LibraryCarousel(
-                            isLoggedIn = isLoggedIn,
-                            steamApps = filteredSteamApps,
-                            epicApps = epicApps,
-                            gogApps = gogApps,
-                            layoutMode = libraryLayoutMode,
-                            libraryRefreshKey = libraryRefreshKey,
-                            iconRefreshKey = iconRefreshKey,
-                            searchQuery = searchQuery
-                        )
-                            "downloads" -> DownloadsTab(selectedDownloadId, onSelectDownload = { selectedDownloadId = it })
-                            "steam", "store" -> SteamStoreTab(isLoggedIn, filteredSteamApps, searchQuery, libraryLayoutMode)
-
-                            "epic" -> EpicStoreTab(isEpicLoggedIn, searchQuery, libraryLayoutMode) {
-                                epicLoginLauncher.launch(Intent(this@UnifiedActivity, EpicOAuthActivity::class.java))
-                            }
-                            "gog" -> GOGStoreTab(isGogLoggedIn, searchQuery, libraryLayoutMode) {
-                                gogLoginLauncher.launch(Intent(this@UnifiedActivity, GOGOAuthActivity::class.java))
-                            }
-                            "amazon" -> StorePlaceholderTab("Amazon Games")
+                        onClose = { scope.launch { drawerState.close() } }
+                    )
+                },
+                scrimColor = Color.Black.copy(alpha = 0.5f),
+                gesturesEnabled = true
+            ) {
+            Box(Modifier.fillMaxSize().background(BgDark)) {
+                Scaffold(
+                    containerColor = BgDark,
+                    topBar = { TopBar(tabs, selectedIdx, { selectedIdx = it }, persona, context, scope, isControllerConnected, isPS, isLibraryTab, searchQueryTfv, { searchQueryTfv = it }, onFilterClicked = { scope.launch { drawerState.open() } }) {
+                        if (selectedLibrarySource == "GOG") {
+                            globalSettingsGogGame = gogApps.find { it.id == selectedGogGameId }
+                        } else {
+                            // Try Steam apps first, then fall back to custom or epic pseudo-apps
+                            globalSettingsApp = (steamApps.find { it.id == selectedSteamAppId }
+                            ?: if (selectedSteamAppId < 0) {
+                                // Build a pseudo SteamApp for the custom game
+                                SteamApp(
+                                    id = selectedSteamAppId,
+                                    name = selectedSteamAppName,
+                                    developer = "Custom"
+                                )
+                            } else if (selectedSteamAppId >= 2000000000) {
+                                val epicId = selectedSteamAppId - 2000000000
+                                val epic = epicApps.find { it.id == epicId }
+                                SteamApp(
+                                    id = selectedSteamAppId,
+                                    name = selectedSteamAppName,
+                                    developer = epic?.developer ?: "Epic Games",
+                                    gameDir = epic?.installPath ?: ""
+                                )
+                            } else null)
                         }
+                    } }
+                ) { padding ->
+                    LaunchedEffect(selectedIdx, tabs) {
+                        currentTabKey = tabs.getOrNull(selectedIdx)?.key ?: "library"
+                        // Reset store focus when switching tabs
+                        storeFocusIndex.value = 0
+                        storeItemClickCallback = null
                     }
 
-                    // Bottom-right Add Custom Game button
-                    if (key == "library") {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(16.dp)
-                                .size(52.dp)
-                                .shadow(10.dp, CircleShape, spotColor = Accent.copy(alpha = 0.4f))
-                                .clip(CircleShape)
-                                .background(Accent)
-                                .focusProperties { canFocus = false } // No specific button for this, handle via long press or touch
-                                .clickable { showAddCustomGame = true },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Add Custom Game", tint = Color.White, modifier = Modifier.size(28.dp))
-                        }
-                    }
+                    Box(Modifier.padding(padding).fillMaxSize().background(BgDark)) {
+                        val key = tabs.getOrNull(selectedIdx)?.key ?: "library"
 
-                    // Cloud Sync Dialog
-                    val cloudSyncStatus by SteamService.cloudSyncStatus.collectAsState()
-                    if (cloudSyncStatus != null) {
-                        CloudSyncOverlay(cloudSyncStatus!!)
+                        AnimatedContent(
+                            targetState = key,
+                            transitionSpec = {
+                                fadeIn(tween(200)) togetherWith fadeOut(tween(150))
+                            },
+                            label = "tabContent"
+                        ) { animatedKey ->
+                            when (animatedKey) {
+                            "library" -> LibraryCarousel(
+                                isLoggedIn = isLoggedIn,
+                                steamApps = filteredSteamApps,
+                                epicApps = epicApps,
+                                gogApps = gogApps,
+                                layoutMode = libraryLayoutMode,
+                                libraryRefreshKey = libraryRefreshKey,
+                                iconRefreshKey = iconRefreshKey,
+                                searchQuery = searchQuery
+                            )
+                                "downloads" -> DownloadsTab(selectedDownloadId, onSelectDownload = { selectedDownloadId = it })
+                                "steam", "store" -> SteamStoreTab(isLoggedIn, filteredSteamApps, searchQuery, libraryLayoutMode)
+
+                                "epic" -> EpicStoreTab(isEpicLoggedIn, searchQuery, libraryLayoutMode) {
+                                    epicLoginLauncher.launch(Intent(this@UnifiedActivity, EpicOAuthActivity::class.java))
+                                }
+                                "gog" -> GOGStoreTab(isGogLoggedIn, searchQuery, libraryLayoutMode) {
+                                    gogLoginLauncher.launch(Intent(this@UnifiedActivity, GOGOAuthActivity::class.java))
+                                }
+                                "amazon" -> StorePlaceholderTab("Amazon Games")
+                            }
+                        }
+
+                        // Bottom-right Add Custom Game button
+                        if (key == "library") {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(16.dp)
+                                    .size(52.dp)
+                                    .shadow(10.dp, CircleShape, spotColor = Accent.copy(alpha = 0.4f))
+                                    .clip(CircleShape)
+                                    .background(Accent)
+                                    .focusProperties { canFocus = false } // No specific button for this, handle via long press or touch
+                                    .clickable { showAddCustomGame = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add Custom Game", tint = Color.White, modifier = Modifier.size(28.dp))
+                            }
+                        }
+
+                        // Cloud Sync Dialog
+                        val cloudSyncStatus by SteamService.cloudSyncStatus.collectAsState()
+                        if (cloudSyncStatus != null) {
+                            CloudSyncOverlay(cloudSyncStatus!!)
+                        }
                     }
                 }
-            }
 
+            }
+            } // end ModalNavigationDrawer
+            UnifiedRedrawDriver(targetRefreshHz)
         }
-        } // end ModalNavigationDrawer
 
         if (globalSettingsApp != null) {
             GameSettingsDialog(
@@ -4631,8 +4691,23 @@ class UnifiedActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             while (true) {
                 val currentDownloads = DownloadService.getAllDownloads()
+                // Sort: Completed first, then Downloading, Paused, Queued, then others
+                val sorted = currentDownloads.sortedWith(compareBy { (_, info) ->
+                    when (info.getStatusFlow().value) {
+                        DownloadPhase.COMPLETE   -> 0
+                        DownloadPhase.DOWNLOADING -> 1
+                        DownloadPhase.PREPARING  -> 1
+                        DownloadPhase.VERIFYING  -> 1
+                        DownloadPhase.PATCHING   -> 1
+                        DownloadPhase.PAUSED     -> 2
+                        DownloadPhase.QUEUED     -> 3
+                        DownloadPhase.FAILED     -> 4
+                        DownloadPhase.CANCELLED  -> 5
+                        else                     -> 6
+                    }
+                })
                 downloads.clear()
-                downloads.addAll(currentDownloads)
+                downloads.addAll(sorted)
                 if (selectedId != null && currentDownloads.none { it.first == selectedId }) {
                     onSelectDownload(null)
                 }

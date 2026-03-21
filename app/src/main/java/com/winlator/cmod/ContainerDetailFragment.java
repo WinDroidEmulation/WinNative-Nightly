@@ -1396,6 +1396,12 @@ public class ContainerDetailFragment extends Fragment {
             }
 
             header.setOnClickListener(v -> {
+                // Clear focus from any child to prevent ScrollView from jumping
+                View focused = view.findFocus();
+                if (focused != null) focused.clearFocus();
+                View scrollView = view.findViewById(R.id.SVContainerDetail);
+                if (scrollView != null) scrollView.requestFocus();
+
                 boolean isExpanded = content.getVisibility() == View.VISIBLE;
                 chevron.animate().rotation(isExpanded ? 0f : 90f).setDuration(200).start();
                 if (isExpanded) {

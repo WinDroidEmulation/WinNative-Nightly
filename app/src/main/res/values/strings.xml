@@ -353,6 +353,8 @@ Supported packages use the .wcp extension and are compressed as xz or zst.</stri
     <string name="content_installed_success">Content installed successfully!</string>
     <string name="contents_downloading_title">Downloading Content</string>
     <string name="contents_installing_title">Installing Content</string>
+    <string name="contents_extracting_title">Extracting Content</string>
+    <string name="contents_extracting_detail">Extracting… (%1$d files)</string>
     <string name="contents_preparing_package">Preparing package…</string>
     <string name="contents_download_complete">Download complete</string>
     <string name="conflicting_content_title">Conflicting Content Installed</string>
@@ -420,6 +422,10 @@ Installed path:
     <string name="backing_up_data">Backing up data...</string>
     <string name="restoring_data">Restoring data...</string>
     <string name="midi_sound_font">MIDI SoundFont</string>
+    <string name="refresh_rate">Refresh Rate</string>
+    <string name="refresh_rate_auto_max">Max</string>
+    <string name="settings_other_refresh_rate_summary">Set display refresh rate and DXVK frame limit</string>
+    <string name="refresh_rate_default_global">Default (Global)</string>
     <string name="sound">Sound</string>
     <string name="do_you_want_to_remove_this_sound_font">Do you want to remove this soundfont?</string>
     <string name="sound_font_removed_success">Soundfont removed successfully!</string>

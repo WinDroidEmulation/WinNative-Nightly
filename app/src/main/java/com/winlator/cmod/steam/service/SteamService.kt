@@ -452,12 +452,17 @@ class SteamService : Service(), IChallengeUrlChanged {
         fun checkQueue() {
             val maxParallel = PrefManager.downloadQueueSize
             val activeCount = downloadJobs.values.count { it.isActive() && it.getStatusFlow().value != DownloadPhase.QUEUED }
+            val slotsAvailable = maxParallel - activeCount
             
-            if (activeCount < maxParallel) {
-                val nextInQueue = downloadJobs.entries.find { it.value.getStatusFlow().value == DownloadPhase.QUEUED }
-                if (nextInQueue != null) {
-                    Timber.i("Starting queued download for appId: ${nextInQueue.key}")
-                    downloadApp(nextInQueue.key)
+            if (slotsAvailable > 0) {
+                // Get all queued downloads and start as many as we have slots
+                val queuedEntries = downloadJobs.entries
+                    .filter { it.value.getStatusFlow().value == DownloadPhase.QUEUED }
+                    .take(slotsAvailable)
+                
+                for (entry in queuedEntries) {
+                    Timber.i("Starting queued download for appId: ${entry.key} (slots: $slotsAvailable)")
+                    downloadApp(entry.key)
                 }
             }
             Unit

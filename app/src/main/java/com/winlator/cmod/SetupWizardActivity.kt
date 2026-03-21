@@ -13,7 +13,9 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,7 +26,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -43,7 +48,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -378,6 +385,7 @@ class SetupWizardActivity : FragmentActivity() {
     private val notifDenied = mutableStateOf(false)
 
     private val pageIndex = mutableIntStateOf(0)
+    private val isAdvancedMode = mutableStateOf(false)
     private val imageFsInstalling = mutableStateOf(false)
     private val imageFsProgress = mutableIntStateOf(0)
     private val imageFsDone = mutableStateOf(false)
@@ -392,6 +400,9 @@ class SetupWizardActivity : FragmentActivity() {
     private val wizardError = mutableStateOf<String?>(null)
     private val transferState = mutableStateOf<TransferState?>(null)
     private val storeLoginState = mutableStateOf(StoreLoginState())
+    private val advancedProfiles = mutableStateListOf<RemotePackageSpec>()
+    private val advancedInstalledSet = mutableStateListOf<String>()
+    private val advancedContainerNames = mutableStateListOf<String>()
 
     private var pendingContainerSettingsType: String? = null
     private var recommendedPackageRefreshInFlight = false
@@ -854,7 +865,7 @@ class SetupWizardActivity : FragmentActivity() {
     ): File? = withContext(Dispatchers.IO) {
         val sanitized = label.lowercase().replace(Regex("[^a-z0-9]+"), "_")
         val output = File(cacheDir, "wizard_${System.currentTimeMillis()}_$sanitized.wcp")
-        val success = Downloader.downloadFile(url, output) { downloadedBytes, totalBytes ->
+        val listener = Downloader.DownloadListener { downloadedBytes, totalBytes ->
             transferState.value = TransferState(
                 title = transferState.value?.title ?: label,
                 detail = "Downloading $label",
@@ -867,6 +878,7 @@ class SetupWizardActivity : FragmentActivity() {
                 }
             )
         }
+        val success = Downloader.downloadFileWinNativeFirst(url, output, listener)
         if (success) output else null
     }
 
@@ -1207,13 +1219,104 @@ class SetupWizardActivity : FragmentActivity() {
         }
     }
 
-    private fun finishToAdvancedComponents() {
-        markSetupComplete(this)
-        startActivity(
-            Intent(this, MainActivity::class.java)
-                .putExtra("selected_menu_item_id", R.id.main_menu_contents)
-        )
-        finish()
+    private fun enterAdvancedMode() {
+        isAdvancedMode.value = true
+        pageIndex.intValue = 1
+        loadAdvancedProfiles()
+    }
+
+    private fun loadAdvancedProfiles() {
+        if (advancedProfiles.isNotEmpty()) return
+        lifecycleScope.launch {
+            val profiles = withContext(Dispatchers.IO) {
+                Downloader.clearFileMap()
+                fetchRecommendedPackages()
+            }
+            advancedProfiles.clear()
+            advancedProfiles.addAll(profiles)
+            refreshAdvancedInstalledSet()
+        }
+    }
+
+    private fun refreshAdvancedInstalledSet() {
+        val manager = ContentsManager(this)
+        manager.syncContents()
+        advancedInstalledSet.clear()
+        advancedProfiles.forEach { spec ->
+            val installed = manager.getProfiles(spec.type).orEmpty().any {
+                it.isInstalled && it.verName.equals(spec.verName, ignoreCase = true)
+            }
+            if (installed) advancedInstalledSet.add(spec.verName)
+        }
+        // Also refresh container names for default settings page
+        val containerManager = ContainerManager(this)
+        advancedContainerNames.clear()
+        containerManager.containers.forEach {
+            advancedContainerNames.add(it.name)
+        }
+    }
+
+    private fun installAdvancedComponent(spec: RemotePackageSpec) {
+        if (transferState.value != null) return
+        lifecycleScope.launch {
+            wizardError.value = null
+            val profile = withContext(Dispatchers.IO) {
+                try {
+                    transferState.value = TransferState(
+                        title = spec.verName,
+                        detail = "Preparing download",
+                        currentIndex = 1,
+                        total = 1
+                    )
+                    val downloaded = downloadFileToCache(
+                        label = spec.verName,
+                        url = spec.remoteUrl,
+                        currentIndex = 1,
+                        total = 1
+                    )
+                    if (downloaded == null) return@withContext null
+
+                    transferState.value = TransferState(
+                        title = spec.verName,
+                        detail = "Installing",
+                        currentIndex = 1,
+                        total = 1,
+                        progress = null
+                    )
+
+                    val installed = installDownloadedPackage(downloaded, spec.remoteUrl)
+                    downloaded.delete()
+                    installed
+                } catch (e: Exception) {
+                    wizardError.value = "Install failed: ${e.message}"
+                    null
+                } finally {
+                    transferState.value = null
+                }
+            }
+            if (profile != null) {
+                // Auto-create container for Wine/Proton
+                if (spec.type == ContentProfile.ContentType.CONTENT_TYPE_WINE ||
+                    spec.type == ContentProfile.ContentType.CONTENT_TYPE_PROTON) {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            val displayName = runtimeDisplayLabel(profile)
+                            val container = ensureContainerForProfile(profile, displayName)
+                            // Persist container IDs for default settings page
+                            if (profile.verName.contains("arm64ec", ignoreCase = true)) {
+                                saveDefaultArm64ContainerId(this@SetupWizardActivity, container.id)
+                            } else {
+                                saveDefaultX86ContainerId(this@SetupWizardActivity, container.id)
+                            }
+                        } catch (e: Exception) {
+                            wizardError.value = "Container creation failed: ${e.message}"
+                        }
+                    }
+                }
+                refreshAdvancedInstalledSet()
+                refreshWizardState()
+            }
+        }
     }
 
     private fun openContainerDefaultSettings(containerId: Int, type: String) {
@@ -1250,14 +1353,19 @@ class SetupWizardActivity : FragmentActivity() {
     @Composable
     private fun SetupWizardScreen() {
         val page by pageIndex
+        val advanced = isAdvancedMode.value
         val scrollState = rememberScrollState()
-        val canGoNext = when (page) {
-            0 -> storageGranted.value && imageFsDone.value
-            1 -> recommendedComponentsDone.value && driversVisited.value
-            2 -> x86ProtonDone.value && arm64ProtonDone.value
-            3 -> defaultX86SettingsDone.value && defaultArmSettingsDone.value
+        val totalPages = if (advanced) 4 else 5
+        val canGoNext = when {
+            page == 0 -> storageGranted.value && imageFsDone.value
+            page == 1 && !advanced -> recommendedComponentsDone.value && driversVisited.value
+            page == 1 && advanced -> true // Advanced components: always allow Next
+            page == 2 && !advanced -> x86ProtonDone.value && arm64ProtonDone.value
+            page == 2 && advanced -> true // Default settings in advanced: optional
+            page == 3 && !advanced -> defaultX86SettingsDone.value && defaultArmSettingsDone.value
             else -> true
         }
+        val lastPage = totalPages - 1
 
         Box(
             modifier = Modifier
@@ -1270,14 +1378,14 @@ class SetupWizardActivity : FragmentActivity() {
                     .padding(horizontal = 20.dp, vertical = 18.dp)
             ) {
                 Text(
-                    text = "Setup Wizard",
+                    text = if (advanced) "Advanced Setup" else "Setup Wizard",
                     color = Color(0xFFE6EDF3),
                     fontFamily = SyncopateFont,
                     fontSize = 18.sp
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Step ${page + 1} of 5",
+                    text = "Step ${page + 1} of $totalPages",
                     color = Color(0xFF8B949E),
                     fontFamily = InterFont,
                     fontSize = 12.sp
@@ -1290,12 +1398,21 @@ class SetupWizardActivity : FragmentActivity() {
                         .verticalScroll(scrollState)
                         .widthIn(max = 720.dp)
                 ) {
-                    when (page) {
-                        0 -> PagePermissions()
-                        1 -> PageComponents()
-                        2 -> PageWineAndProton()
-                        3 -> PageDefaultSettings()
-                        4 -> PageStores()
+                    if (advanced) {
+                        when (page) {
+                            0 -> PagePermissions()
+                            1 -> PageAdvancedComponents()
+                            2 -> PageDefaultSettings()
+                            3 -> PageStores()
+                        }
+                    } else {
+                        when (page) {
+                            0 -> PagePermissions()
+                            1 -> PageComponents()
+                            2 -> PageWineAndProton()
+                            3 -> PageDefaultSettings()
+                            4 -> PageStores()
+                        }
                     }
 
                     wizardError.value?.let { message ->
@@ -1314,9 +1431,9 @@ class SetupWizardActivity : FragmentActivity() {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    if (page == 1) {
+                    if (page == 1 && !advanced) {
                         OutlinedButton(
-                            onClick = { finishToAdvancedComponents() },
+                            onClick = { enterAdvancedMode() },
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = Color(0xFFE6EDF3)
@@ -1326,8 +1443,14 @@ class SetupWizardActivity : FragmentActivity() {
                         }
                     } else {
                         OutlinedButton(
-                            onClick = { if (page > 0) pageIndex.intValue -= 1 },
-                            enabled = page > 0,
+                            onClick = {
+                                if (page > 0) pageIndex.intValue -= 1
+                                else if (advanced) {
+                                    isAdvancedMode.value = false
+                                    pageIndex.intValue = 1
+                                }
+                            },
+                            enabled = page > 0 || advanced,
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = Color(0xFFE6EDF3),
@@ -1338,7 +1461,7 @@ class SetupWizardActivity : FragmentActivity() {
                         }
                     }
 
-                    if (page < 4) {
+                    if (page < lastPage) {
                         Button(
                             onClick = { if (canGoNext) pageIndex.intValue += 1 },
                             enabled = canGoNext,
@@ -1511,6 +1634,184 @@ class SetupWizardActivity : FragmentActivity() {
             onClick = { installRecommendedProton(arm64ProtonSpec) },
             enabled = transferState.value == null
         )
+    }
+
+    @Composable
+    private fun PageAdvancedComponents() {
+        val typeOrder = listOf(
+            ContentProfile.ContentType.CONTENT_TYPE_WINE,
+            ContentProfile.ContentType.CONTENT_TYPE_PROTON,
+            ContentProfile.ContentType.CONTENT_TYPE_DXVK,
+            ContentProfile.ContentType.CONTENT_TYPE_VKD3D,
+            ContentProfile.ContentType.CONTENT_TYPE_BOX64,
+            ContentProfile.ContentType.CONTENT_TYPE_FEXCORE,
+            ContentProfile.ContentType.CONTENT_TYPE_WOWBOX64
+        )
+        val typeLabels = mapOf(
+            ContentProfile.ContentType.CONTENT_TYPE_WINE to "Wine",
+            ContentProfile.ContentType.CONTENT_TYPE_PROTON to "Proton",
+            ContentProfile.ContentType.CONTENT_TYPE_DXVK to "DXVK",
+            ContentProfile.ContentType.CONTENT_TYPE_VKD3D to "VKD3D",
+            ContentProfile.ContentType.CONTENT_TYPE_BOX64 to "Box64",
+            ContentProfile.ContentType.CONTENT_TYPE_FEXCORE to "FEXCore",
+            ContentProfile.ContentType.CONTENT_TYPE_WOWBOX64 to "Wowbox64"
+        )
+        var selectedTab by remember { mutableStateOf(typeOrder[0]) }
+
+        Text(
+            text = "Select Components",
+            color = Color(0xFFE6EDF3),
+            fontFamily = InterFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 24.sp
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Choose which components to install. Wine/Proton will auto-create a container.",
+            color = Color(0xFF8B949E),
+            fontFamily = InterFont,
+            fontSize = 13.sp
+        )
+        Spacer(Modifier.height(14.dp))
+
+        // Also show Drivers button
+        WizardActionCard(
+            title = "Drivers",
+            subtitle = "Required",
+            completed = driversVisited.value,
+            buttonLabel = if (driversVisited.value) "Done" else "Open Drivers",
+            onClick = { openDrivers() },
+            enabled = imageFsDone.value
+        )
+        Spacer(Modifier.height(14.dp))
+
+        // Tab row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            typeOrder.forEach { type ->
+                val isSelected = type == selectedTab
+                val hasInstalled = advancedProfiles.any {
+                    it.type == type && it.verName in advancedInstalledSet
+                }
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { selectedTab = type },
+                    color = when {
+                        isSelected -> Color(0xFF238636)
+                        hasInstalled -> Color(0xFF1F6F43)
+                        else -> Color(0xFF21262D)
+                    },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = typeLabels[type] ?: type.toString(),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                        color = Color(0xFFE6EDF3),
+                        fontFamily = InterFont,
+                        fontSize = 10.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        // Component list for selected tab
+        val tabProfiles = advancedProfiles.filter { it.type == selectedTab }
+
+        if (advancedProfiles.isEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = Color(0xFF57CBDE),
+                    strokeWidth = 2.dp
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = "Loading components…",
+                    color = Color(0xFF8B949E),
+                    fontFamily = InterFont,
+                    fontSize = 13.sp
+                )
+            }
+        } else if (tabProfiles.isEmpty()) {
+            Text(
+                text = "No components available for this category.",
+                color = Color(0xFF8B949E),
+                fontFamily = InterFont,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
+        } else {
+            tabProfiles.forEach { spec ->
+                val installed = spec.verName in advancedInstalledSet
+                AdvancedComponentCard(
+                    name = spec.verName,
+                    installed = installed,
+                    onClick = { installAdvancedComponent(spec) },
+                    enabled = transferState.value == null && !installed
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+
+    @Composable
+    private fun AdvancedComponentCard(
+        name: String,
+        installed: Boolean,
+        onClick: () -> Unit,
+        enabled: Boolean = true
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFF161B22),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = name,
+                        color = Color(0xFFE6EDF3),
+                        fontFamily = InterFont,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
+                }
+                Button(
+                    onClick = onClick,
+                    enabled = enabled && !installed,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.height(34.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (installed) Color(0xFF1F6F43) else Color(0xFF57CBDE),
+                        contentColor = if (installed) Color.White else Color.Black,
+                        disabledContainerColor = if (installed) Color(0xFF1F6F43) else Color(0xFF30363D),
+                        disabledContentColor = if (installed) Color.White else Color(0xFF8B949E)
+                    )
+                ) {
+                    Text(
+                        text = if (installed) "Installed" else "Install",
+                        fontFamily = InterFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
     }
 
     @Composable

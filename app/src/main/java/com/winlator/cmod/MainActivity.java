@@ -38,6 +38,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.navigation.NavigationView;
 import com.winlator.cmod.R;
+import com.winlator.cmod.core.RefreshRateUtils;
 import com.winlator.cmod.contentdialog.ContentDialog;
 import com.winlator.cmod.core.Callback;
 import com.winlator.cmod.core.AppUtils;
@@ -538,5 +539,15 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             if (((InputControlsFragment) fragment).dispatchGenericMotionEvent(event)) return true;
         }
         return super.dispatchGenericMotionEvent(event);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        applyPreferredRefreshRate();
+    }
+
+    private void applyPreferredRefreshRate() {
+        RefreshRateUtils.applyPreferredRefreshRate(this);
     }
 }

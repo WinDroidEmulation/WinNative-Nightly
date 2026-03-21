@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CompoundButton;
@@ -28,6 +29,7 @@ import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.Callback;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.PreloaderDialog;
+import com.winlator.cmod.core.RefreshRateUtils;
 import com.winlator.cmod.midi.MidiManager;
 import com.winlator.cmod.xenvironment.ImageFsInstaller;
 
@@ -39,6 +41,7 @@ public class OtherSettingsFragment extends Fragment {
     private Callback<Uri> installSoundFontCallback;
     private SharedPreferences preferences;
 
+    private Spinner sRefreshRate;
     private CompoundButton cbCursorLock;
     private CompoundButton cbXinputToggle;
     private CompoundButton cbEnableBigPictureMode;
@@ -69,6 +72,19 @@ public class OtherSettingsFragment extends Fragment {
         View view = inflater.inflate(R.layout.other_settings_fragment, container, false);
         final Context context = requireContext();
         preferences = PreferenceManager.getDefaultSharedPreferences(context);
+
+        // Initialize Refresh Rate Spinner
+        sRefreshRate = view.findViewById(R.id.SRefreshRate);
+        loadRefreshRateSpinner(sRefreshRate);
+        sRefreshRate.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View selectedView, int position, long id) {
+                persistRefreshRateSelection(true);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
 
         // Initialize Big Picture Mode Checkbox
         cbEnableBigPictureMode = view.findViewById(R.id.CBEnableBigPictureMode);
@@ -220,6 +236,9 @@ public class OtherSettingsFragment extends Fragment {
         super.onPause();
         SharedPreferences.Editor editor = preferences.edit();
 
+        // Save Refresh Rate selection
+        editor.putInt("refresh_rate_override", getSelectedRefreshRateValue());
+
         editor.putBoolean("use_dri3", cbUseDRI3.isChecked());
         editor.putBoolean("use_xr", cbUseXR.isChecked());
         editor.putFloat("cursor_speed", sbCursorSpeed.getProgress() / 100.0f);
@@ -232,6 +251,9 @@ public class OtherSettingsFragment extends Fragment {
         editor.putBoolean("enable_big_picture_mode", cbEnableBigPictureMode.isChecked());
         saveCustomApiKeySettings(editor);
         editor.apply();
+        if (isAdded()) {
+            RefreshRateUtils.applyPreferredRefreshRate(requireActivity());
+        }
     }
 
     private void initCustomApiKeySettings(View view) {
@@ -285,6 +307,64 @@ public class OtherSettingsFragment extends Fragment {
         ArrayAdapter<String> adapter = new ArrayAdapter<>(requireContext(), R.layout.spinner_item_themed, fileNames);
         adapter.setDropDownViewResource(R.layout.spinner_dropdown_item_themed);
         spinner.setAdapter(adapter);
+    }
+
+    /**
+     * Populate the spinner with the display's actual supported refresh rates.
+     */
+    private void loadRefreshRateSpinner(Spinner spinner) {
+        List<String> entries = RefreshRateUtils.buildRefreshRateEntryLabels(
+                requireActivity(),
+                getString(R.string.refresh_rate_auto_max)
+        );
+
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(requireContext(), R.layout.spinner_item_themed, entries);
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item_themed);
+        spinner.setAdapter(adapter);
+
+        // Restore saved selection
+        int savedRate = preferences.getInt("refresh_rate_override", 0);
+        if (savedRate == 0) {
+            spinner.setSelection(0); // Max
+        } else {
+            String target = savedRate + " Hz";
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).equals(target)) {
+                    spinner.setSelection(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * Build refresh rate entries for per-game shortcut spinners.
+     * Includes "Default (Global)" as the first entry.
+     */
+    public static List<String> buildRefreshRateEntries(android.app.Activity activity) {
+        return RefreshRateUtils.buildRefreshRateEntryLabels(
+                activity,
+                activity.getString(R.string.refresh_rate_default_global)
+        );
+    }
+
+    private int getSelectedRefreshRateValue() {
+        if (sRefreshRate == null || sRefreshRate.getSelectedItem() == null) {
+            return 0;
+        }
+        return RefreshRateUtils.parseRefreshRateLabel(sRefreshRate.getSelectedItem().toString());
+    }
+
+    private void persistRefreshRateSelection(boolean applyToCurrentActivity) {
+        if (preferences == null) return;
+
+        preferences.edit()
+                .putInt("refresh_rate_override", getSelectedRefreshRateValue())
+                .apply();
+
+        if (applyToCurrentActivity && isAdded()) {
+            RefreshRateUtils.applyPreferredRefreshRate(requireActivity());
+        }
     }
 
     private void openFile(int requestCode) {

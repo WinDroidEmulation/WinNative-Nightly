@@ -9,6 +9,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import com.winlator.cmod.core.FileUtils;
+import com.winlator.cmod.core.OnExtractFileListener;
 import com.winlator.cmod.core.TarCompressorUtils;
 
 import org.json.JSONArray;
@@ -91,6 +92,14 @@ public class ContentsManager {
         void onFailed(InstallFailedReason reason, Exception e);
 
         void onSucceed(ContentProfile profile);
+    }
+
+    /**
+     * Listener for extraction progress updates.
+     * Called on the background thread during extraction.
+     */
+    public interface OnExtractionProgressListener {
+        void onProgress(int filesExtracted, String currentFileName);
     }
 
     public void setRemoteProfiles(String json) {
@@ -189,14 +198,28 @@ public class ContentsManager {
     }
 
     public void extraContentFile(Uri uri, OnInstallFinishedCallback callback) {
+        extraContentFile(uri, callback, null);
+    }
+
+    public void extraContentFile(Uri uri, OnInstallFinishedCallback callback, OnExtractionProgressListener progressListener) {
         cleanTmpDir(context);
 
         File file = getTmpDir(context);
 
+        // Count extracted files for progress
+        final int[] fileCount = {0};
+        OnExtractFileListener extractListener = progressListener != null ? (destination, size) -> {
+            fileCount[0]++;
+            progressListener.onProgress(fileCount[0], destination.getName());
+            return destination;
+        } : null;
+
         boolean ret;
-        ret = TarCompressorUtils.extract(TarCompressorUtils.Type.XZ, context, uri, file);
-        if (!ret)
-            ret = TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, context, uri, file);
+        ret = TarCompressorUtils.extract(TarCompressorUtils.Type.XZ, context, uri, file, extractListener);
+        if (!ret) {
+            fileCount[0] = 0;
+            ret = TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, context, uri, file, extractListener);
+        }
         if (!ret) {
             callback.onFailed(InstallFailedReason.ERROR_BADTAR, null);
             return;

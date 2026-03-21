@@ -261,6 +261,7 @@ class ContentsFragment : Fragment() {
                 if (isExtracting) {
                     isExtracting = false
                     extractedProfile = profile
+                    // Transition from extracting to installing phase
                     transferDialog.update(
                         getString(R.string.contents_installing_title),
                         profile.verName,
@@ -320,8 +321,17 @@ class ContentsFragment : Fragment() {
             }
         }
 
+        // Progress listener that updates the dialog during extraction
+        val extractionProgress = ContentsManager.OnExtractionProgressListener { filesExtracted, currentFileName ->
+            transferDialog.update(
+                getString(R.string.contents_extracting_title),
+                getString(R.string.contents_extracting_detail, filesExtracted),
+                indeterminate = true
+            )
+        }
+
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            runCatching { manager.extraContentFile(uri, callback) }
+            runCatching { manager.extraContentFile(uri, callback, extractionProgress) }
                 .onFailure {
                     activity?.runOnUiThread {
                         transferDialog.dismiss()
@@ -545,14 +555,14 @@ class ContentsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val output = File(requireContext().cacheDir, "temp_${System.currentTimeMillis()}")
             val success = withContext(Dispatchers.IO) {
-                Downloader.downloadFile(remoteUrl, output) { downloadedBytes, totalBytes ->
+                Downloader.downloadFileWinNativeFirst(remoteUrl, output) { downloadedBytes, totalBytes ->
                     if (totalBytes <= 0L) {
                         transferDialog.update(
                             getString(R.string.contents_downloading_title),
                             profile.verName,
                             indeterminate = true
                         )
-                        return@downloadFile
+                        return@downloadFileWinNativeFirst
                     }
                     val progressUnits = ((downloadedBytes * ContentTransferDialog.PROGRESS_SCALE) / totalBytes)
                         .toInt()
@@ -572,6 +582,12 @@ class ContentsFragment : Fragment() {
             }
 
             if (success) {
+                // Transition: show "Extracting..." before starting the install phase
+                transferDialog.update(
+                    getString(R.string.contents_extracting_title),
+                    profile.verName,
+                    indeterminate = true
+                )
                 installSelectedContent(
                     Uri.parse(output.absolutePath),
                     transferDialog,

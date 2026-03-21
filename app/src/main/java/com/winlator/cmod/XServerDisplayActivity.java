@@ -71,6 +71,7 @@ import com.winlator.cmod.core.KeyValueSet;
 import com.winlator.cmod.core.OnExtractFileListener;
 import com.winlator.cmod.core.PreloaderDialog;
 import com.winlator.cmod.core.ProcessHelper;
+import com.winlator.cmod.core.RefreshRateUtils;
 import com.winlator.cmod.core.StringUtils;
 import com.winlator.cmod.core.TarCompressorUtils;
 import com.winlator.cmod.core.WineInfo;
@@ -285,20 +286,76 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
     };
 
-    private float pickHighestRefreshRate() {
-    	android.view.Display display = getWindowManager().getDefaultDisplay();
-    	android.view.Display.Mode[] modes = display.getSupportedModes();
-    	
-    	float maxRefresh = 0f;
-    	
-    	for (android.view.Display.Mode mode : modes) {
-			if (mode.getRefreshRate() > maxRefresh)
-    	    	maxRefresh = mode.getRefreshRate();
-    	}
+    /**
+     * Returns the effective display refresh rate override.
+     * Priority: per-game shortcut > global setting > 0 (meaning use device max).
+     */
+    private int getRefreshRateOverride() {
+        int perGameRate = getPerGameRefreshRateOverride();
+        return perGameRate > 0 ? perGameRate : getGlobalRefreshRateOverride();
+    }
 
-    	Log.d("XServerDisplayActivity", "Picking refresh rate " + maxRefresh);
+    private int getPerGameRefreshRateOverride() {
+        if (shortcut == null) return 0;
+        return parsePositiveInt(shortcut.getExtra("refreshRate", ""));
+    }
 
-    	return maxRefresh;
+    private int getGlobalRefreshRateOverride() {
+        if (preferences == null) return 0;
+        return Math.max(0, preferences.getInt("refresh_rate_override", 0));
+    }
+
+    private boolean hasPerGameDxvkFrameRateOverride() {
+        if (shortcut == null) return false;
+
+        String shortcutDxwrapperConfig = shortcut.getExtra("dxwrapperConfig");
+        if (shortcutDxwrapperConfig.isEmpty()) return false;
+
+        KeyValueSet perGameConfig = DXVKConfigDialog.parseConfig(shortcutDxwrapperConfig);
+        return parsePositiveInt(perGameConfig.get("framerate")) > 0;
+    }
+
+    /**
+     * Per-game settings always win over the global refresh rate when determining DXVK frame limit.
+     */
+    private int getDxvkFrameRateOverride() {
+        int perGameRate = getPerGameRefreshRateOverride();
+        if (perGameRate > 0) {
+            return perGameRate;
+        }
+        if (hasPerGameDxvkFrameRateOverride()) {
+            return 0;
+        }
+
+        int globalRate = getGlobalRefreshRateOverride();
+        if (globalRate > 0) {
+            return globalRate;
+        }
+        return RefreshRateUtils.getMaxSupportedRefreshRate(this);
+    }
+
+    private int parsePositiveInt(String value) {
+        if (value == null || value.isEmpty()) return 0;
+        try {
+            int parsed = Integer.parseInt(value);
+            return Math.max(parsed, 0);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    private void applyPreferredRefreshRate() {
+        Runnable applyRefresh = () -> {
+            if (isFinishing() || isDestroyed()) return;
+
+            RefreshRateUtils.applyPreferredRefreshRate(this, getRefreshRateOverride());
+        };
+
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            applyRefresh.run();
+        } else {
+            runOnUiThread(applyRefresh);
+        }
     }
 
 
@@ -336,10 +393,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         AppUtils.hideSystemUI(this);
         AppUtils.keepScreenOn(this);
+        // Clean up any shared debug logs from previous session
+        DebugFragment.Companion.cleanupSharedLogs();
 
-        android.view.WindowManager.LayoutParams params = getWindow().getAttributes();
-        params.preferredRefreshRate = pickHighestRefreshRate();
-        getWindow().setAttributes(params);
+        // Initialize preferences early so pickHighestRefreshRate can read global override
+        preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        applyPreferredRefreshRate();
         
         setContentView(R.layout.xserver_display_activity);
 
@@ -347,7 +406,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
         ControllerManager.getInstance().init(this);
 
         preloaderDialog = new PreloaderDialog(this);
-        preferences = PreferenceManager.getDefaultSharedPreferences(this);
 
         cursorLock = preferences.getBoolean("cursor_lock", false);
 
@@ -781,6 +839,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             Log.d("XServerDisplayActivity", "XInput Disabled from Shortcut: " + xinputDisabledFromShortcut);
             
             startupSelection = shortcut.getExtra("startupSelection", String.valueOf(container.getStartupSelection()));
+            // Per-game refresh rate override is read in getRefreshRateOverride()
         } else {
             startupSelection = String.valueOf(container.getStartupSelection());
         }
@@ -799,6 +858,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         this.graphicsDriverConfig = GraphicsDriverConfigDialog.parseGraphicsDriverConfig(graphicsDriverConfig);
         this.dxwrapperConfig = DXVKConfigDialog.parseConfig(dxwrapperConfig);
+        applyPreferredRefreshRate();
 
         if (!wineInfo.isWin64()) {
             onExtractFileListener = (file, size) -> {
@@ -1156,6 +1216,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
+        applyPreferredRefreshRate();
         boolean gyroEnabled = preferences.getBoolean("gyro_enabled", true);
 
         if (gyroEnabled) {
@@ -2431,10 +2492,14 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         Log.d("GraphicsDriverExtraction", "Adrenotools DriverID: " + adrenoToolsDriverId);
 
+        // Re-apply refresh rate now that shortcut is loaded (per-game override may apply)
+        applyPreferredRefreshRate();
+
         File rootDir = imageFs.getRootDir();
 
         if (dxwrapper.contains("dxvk")) {
-            DXVKConfigDialog.setEnvVars(this, dxwrapperConfig, envVars);
+            int refreshRateOverride = getDxvkFrameRateOverride();
+            DXVKConfigDialog.setEnvVars(this, dxwrapperConfig, envVars, refreshRateOverride);
             String version = dxwrapperConfig.get("version");
             if (version.equals("1.11.1-sarek")) {
                 Log.d("GraphicsDriverExtraction", "Disabling Wrapper PATCH_OPCONSTCOMP SPIR-V pass");

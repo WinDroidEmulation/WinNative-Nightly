@@ -1,7 +1,10 @@
 package com.winlator.cmod
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 import android.util.Log
+import com.winlator.cmod.core.RefreshRateUtils
 import com.winlator.cmod.steam.events.EventDispatcher
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
@@ -22,6 +25,7 @@ class PluviaApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        registerRefreshRateLifecycleCallbacks()
 
         // Replace Android's limited BouncyCastle provider with the full one
         // so that JavaSteam can use SHA-1 (and other algorithms) via the "BC" provider.
@@ -74,5 +78,31 @@ class PluviaApp : Application() {
             
         @JvmField
         val events = EventDispatcher()
+    }
+
+    private fun registerRefreshRateLifecycleCallbacks() {
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+                if (activity !is XServerDisplayActivity) {
+                    RefreshRateUtils.applyPreferredRefreshRate(activity)
+                }
+            }
+
+            override fun onActivityResumed(activity: Activity) {
+                if (activity !is XServerDisplayActivity) {
+                    RefreshRateUtils.applyPreferredRefreshRate(activity)
+                }
+            }
+
+            override fun onActivityStarted(activity: Activity) {}
+
+            override fun onActivityPaused(activity: Activity) {}
+
+            override fun onActivityStopped(activity: Activity) {}
+
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
     }
 }

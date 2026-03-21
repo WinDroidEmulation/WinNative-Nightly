@@ -1,7 +1,10 @@
 package com.winlator.cmod
 
+import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.LayoutInflater
@@ -12,6 +15,7 @@ import android.widget.CompoundButton
 import android.widget.GridLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.FileProvider
 import androidx.core.content.edit
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
@@ -20,6 +24,12 @@ import com.winlator.cmod.core.ArrayUtils
 import com.winlator.cmod.core.AppUtils
 import com.winlator.cmod.core.FileUtils
 import org.json.JSONArray
+import java.io.BufferedReader
+import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStreamReader
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class DebugFragment : Fragment() {
     private lateinit var preferences: SharedPreferences
@@ -27,6 +37,8 @@ class DebugFragment : Fragment() {
     private lateinit var cbEnableBox64Logs: CompoundButton
     private lateinit var cbEnableFexcoreLogs: CompoundButton
     private lateinit var cbEnableSteamLogs: CompoundButton
+    private lateinit var cbEnableInputLogs: CompoundButton
+    private lateinit var cbEnableDownloadLogs: CompoundButton
     private lateinit var wineDebugChannels: ArrayList<String>
 
     override fun onCreateView(
@@ -73,14 +85,76 @@ class DebugFragment : Fragment() {
         cbEnableSteamLogs.isChecked = com.winlator.cmod.steam.utils.PrefManager.enableSteamLogs
         cbEnableSteamLogs.setOnCheckedChangeListener { _, isChecked ->
             com.winlator.cmod.steam.utils.PrefManager.enableSteamLogs = isChecked
-            
-            // Re-plant Timber if enabled during runtime (optional but helpful)
+
+            // Re-plant Timber if enabled during runtime
             if (isChecked && timber.log.Timber.forest().isEmpty()) {
                 timber.log.Timber.plant(timber.log.Timber.DebugTree())
             }
         }
 
+        // Input Logs toggle (off by default)
+        cbEnableInputLogs = view.findViewById(R.id.CBEnableInputLogs)
+        cbEnableInputLogs.isChecked = preferences.getBoolean("enable_input_logs", false)
+        cbEnableInputLogs.setOnCheckedChangeListener { _, isChecked ->
+            preferences.edit { putBoolean("enable_input_logs", isChecked) }
+        }
+
+        // Download Logs toggle (off by default)
+        cbEnableDownloadLogs = view.findViewById(R.id.CBEnableDownloadLogs)
+        cbEnableDownloadLogs.isChecked = preferences.getBoolean("enable_download_logs", false)
+        cbEnableDownloadLogs.setOnCheckedChangeListener { _, isChecked ->
+            preferences.edit { putBoolean("enable_download_logs", isChecked) }
+        }
+
+        // Share Logs button
+        val shareButton = view.findViewById<Button>(R.id.BTShareLogs)
+        shareButton.setOnClickListener { shareLogs() }
+
         return view
+    }
+
+    private fun shareLogs() {
+        val context = requireContext()
+        try {
+            // Capture logcat output (last 5000 lines)
+            val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "5000"))
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val logContent = reader.readText()
+            reader.close()
+            process.waitFor()
+
+            // Create zip file in cache
+            val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                .format(java.util.Date())
+            val zipFile = File(context.cacheDir, "winnative_logs_$timestamp.zip")
+            ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+                zos.putNextEntry(ZipEntry("logcat_$timestamp.txt"))
+                zos.write(logContent.toByteArray())
+                zos.closeEntry()
+            }
+
+            // Store reference for auto-cleanup
+            lastSharedLogFile = zipFile
+
+            // Share via Android share sheet
+            val authority = "${context.packageName}.tileprovider"
+            val uri = FileProvider.getUriForFile(context, authority, zipFile)
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/zip"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "WinNative Logs ($timestamp)")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(shareIntent, "Share Logs"))
+
+            // Auto-delete after 3 minutes
+            Handler(Looper.getMainLooper()).postDelayed({
+                cleanupSharedLogs()
+            }, 3 * 60 * 1000L)
+
+        } catch (e: Exception) {
+            AppUtils.showToast(context, "Failed to capture logs: ${e.message}")
+        }
     }
 
     private fun loadWineDebugChannels(view: View, debugChannels: ArrayList<String>) {
@@ -225,6 +299,19 @@ class DebugFragment : Fragment() {
         if (view is ViewGroup) {
             for (index in 0 until view.childCount) {
                 setEnabledRecursive(view.getChildAt(index), enabled)
+            }
+        }
+    }
+
+    companion object {
+        @Volatile
+        var lastSharedLogFile: File? = null
+
+        /** Call when starting a new game or after 3min timeout to clean up shared logs. */
+        fun cleanupSharedLogs() {
+            lastSharedLogFile?.let { file ->
+                if (file.exists()) file.delete()
+                lastSharedLogFile = null
             }
         }
     }

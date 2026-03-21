@@ -37,6 +37,7 @@ import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.DefaultVersion;
 import com.winlator.cmod.core.EnvVars;
+import com.winlator.cmod.core.RefreshRateUtils;
 import com.winlator.cmod.core.StringUtils;
 import com.winlator.cmod.core.WineInfo;
 import com.winlator.cmod.fexcore.FEXCoreManager;
@@ -49,10 +50,14 @@ import com.winlator.cmod.widget.CPUListView;
 import com.winlator.cmod.widget.EnvVarsView;
 import com.winlator.cmod.winhandler.WinHandler;
 
+import com.winlator.cmod.OtherSettingsFragment;
+import android.widget.Button;
+
 import java.io.File;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 
@@ -62,6 +67,9 @@ public class ShortcutSettingsDialog extends ContentDialog {
     private InputControlsManager inputControlsManager;
     private TextView tvGraphicsDriverVersion;
     private String box64Version;
+
+    // Map of setting label TextViews to their original (unmarked) text, for * indicator tracking
+    private final HashMap<TextView, String> labelOriginalText = new HashMap<>();
 
 
     public ShortcutSettingsDialog(ShortcutsFragment fragment, Shortcut shortcut) {
@@ -85,6 +93,34 @@ public class ShortcutSettingsDialog extends ContentDialog {
         createContentView();
     }
 
+    /**
+     * Register a label TextView for change-indicator tracking.
+     * Stores the original text so we can append/remove '*' later.
+     */
+    private void trackLabel(TextView label) {
+        if (label != null && !labelOriginalText.containsKey(label)) {
+            labelOriginalText.put(label, label.getText().toString());
+        }
+    }
+
+    /**
+     * Mark or unmark a label with '*' depending on whether the current value
+     * differs from the container default.
+     */
+    private void markIfChanged(TextView label, String currentValue, String containerDefault) {
+        if (label == null) return;
+        String originalText = labelOriginalText.get(label);
+        if (originalText == null) originalText = label.getText().toString().replace(" *", "");
+        boolean changed = currentValue != null && !currentValue.equals(containerDefault);
+        label.setText(changed ? originalText + " *" : originalText);
+    }
+
+    private void markSpinnerIfChanged(Spinner spinner, TextView label, String containerDefault) {
+        if (spinner == null || label == null) return;
+        String current = spinner.getSelectedItem() != null ? StringUtils.parseIdentifier(spinner.getSelectedItem()) : "";
+        markIfChanged(label, current, containerDefault);
+    }
+
     private void createContentView() {
         final Context context = fragment.getContext();
         inputControlsManager = new InputControlsManager(context);
@@ -99,6 +135,8 @@ public class ShortcutSettingsDialog extends ContentDialog {
         // Initialize the turnip version TextView
         tvGraphicsDriverVersion = findViewById(R.id.TVGraphicsDriverVersion);
 
+        final Container container = shortcut.container;
+
         final EditText etName = findViewById(R.id.ETName);
         etName.setText(shortcut.name);
 
@@ -112,9 +150,8 @@ public class ShortcutSettingsDialog extends ContentDialog {
         etExecArgs.setText(shortcut.getExtra("execArgs"));
 
         ContainerDetailFragment containerDetailFragment = new ContainerDetailFragment(shortcut.container.id);
-//        containerDetailFragment.loadScreenSizeSpinner(getContentView(), shortcut.getExtra("screenSize", shortcut.container.getScreenSize()));
 
-        loadScreenSizeSpinner(getContentView(), shortcut.getExtra("screenSize", shortcut.container.getScreenSize()), isDarkMode);
+        loadScreenSizeSpinner(getContentView(), shortcut.getExtra("screenSize", container.getScreenSize()), isDarkMode);
 
 
         final Spinner sGraphicsDriver = findViewById(R.id.SGraphicsDriver);
@@ -126,32 +163,38 @@ public class ShortcutSettingsDialog extends ContentDialog {
         final ContentsManager contentsManager = new ContentsManager(context);
 
         final View vGraphicsDriverConfig = findViewById(R.id.BTGraphicsDriverConfig);
-        vGraphicsDriverConfig.setTag(shortcut.getExtra("graphicsDriverConfig", shortcut.container.getGraphicsDriverConfig()));
+        vGraphicsDriverConfig.setTag(shortcut.getExtra("graphicsDriverConfig", container.getGraphicsDriverConfig()));
 
         final View vDXWrapperConfig = findViewById(R.id.BTDXWrapperConfig);
-        vDXWrapperConfig.setTag(shortcut.getExtra("dxwrapperConfig", shortcut.container.getDXWrapperConfig()));
+        vDXWrapperConfig.setTag(shortcut.getExtra("dxwrapperConfig", container.getDXWrapperConfig()));
 
         findViewById(R.id.BTHelpDXWrapper).setOnClickListener((v) -> AppUtils.showHelpBox(context, v, R.string.dxwrapper_help_content));
 
         final Spinner sAudioDriver = findViewById(R.id.SAudioDriver);
-        AppUtils.setSpinnerSelectionFromIdentifier(sAudioDriver, shortcut.getExtra("audioDriver", shortcut.container.getAudioDriver()));
+        AppUtils.setSpinnerSelectionFromIdentifier(sAudioDriver, shortcut.getExtra("audioDriver", container.getAudioDriver()));
         final Spinner sEmulator = findViewById(R.id.SEmulator);
-        AppUtils.setSpinnerSelectionFromIdentifier(sEmulator, shortcut.getExtra("emulator", shortcut.container.getEmulator()));
+        AppUtils.setSpinnerSelectionFromIdentifier(sEmulator, shortcut.getExtra("emulator", container.getEmulator()));
         final Spinner sEmulator64 = findViewById(R.id.SEmulator64);
-        AppUtils.setSpinnerSelectionFromIdentifier(sEmulator64, shortcut.getExtra("emulator64", shortcut.container.getEmulator64()));
+        AppUtils.setSpinnerSelectionFromIdentifier(sEmulator64, shortcut.getExtra("emulator64", container.getEmulator64()));
 
         final View box64Frame = findViewById(R.id.box64Frame);
         final View fexcoreFrame = findViewById(R.id.fexcoreFrame);
 
         final Spinner sFEXCoreVersion = findViewById(R.id.SFEXCoreVersion);
         final Spinner sFEXCorePreset = findViewById(R.id.SFEXCorePreset);
+        final Spinner sBox64Preset = findViewById(R.id.SBox64Preset);
 
         // Sync contents off the main thread, then populate dependent spinners on UI thread
         java.util.concurrent.Executors.newSingleThreadExecutor().execute(() -> {
             contentsManager.syncContents();
-            sGraphicsDriver.post(() -> populateContentsSpinners(context, contentsManager,
-                sGraphicsDriver, sDXWrapper, vGraphicsDriverConfig, vDXWrapperConfig,
-                sBox64Version, sEmulator, sEmulator64, sFEXCoreVersion));
+            sGraphicsDriver.post(() -> {
+                populateContentsSpinners(context, contentsManager,
+                    sGraphicsDriver, sDXWrapper, vGraphicsDriverConfig, vDXWrapperConfig,
+                    sBox64Version, sEmulator, sEmulator64, sFEXCoreVersion);
+                // After spinners are populated, set up change-tracking listeners
+                setupChangeIndicators(sGraphicsDriver, sDXWrapper, sAudioDriver, sEmulator, sEmulator64,
+                        sBox64Version, sFEXCoreVersion, sFEXCorePreset, sBox64Preset, container);
+            });
         });
 
         AdapterView.OnItemSelectedListener emulatorListener = new AdapterView.OnItemSelectedListener() {
@@ -175,10 +218,14 @@ public class ShortcutSettingsDialog extends ContentDialog {
 
         final Spinner sMIDISoundFont = findViewById(R.id.SMIDISoundFont);
         MidiManager.loadSFSpinner(sMIDISoundFont);
-        AppUtils.setSpinnerSelectionFromValue(sMIDISoundFont, shortcut.getExtra("midiSoundFont", shortcut.container.getMIDISoundFont()));
+        AppUtils.setSpinnerSelectionFromValue(sMIDISoundFont, shortcut.getExtra("midiSoundFont", container.getMIDISoundFont()));
+
+        // Per-game Refresh Rate spinner
+        final Spinner sRefreshRate = findViewById(R.id.SRefreshRate);
+        loadShortcutRefreshRateSpinner(sRefreshRate, shortcut.getExtra("refreshRate", "0"));
 
         final EditText etLC_ALL = findViewById(R.id.ETlcall);
-        etLC_ALL.setText(shortcut.getExtra("lc_all", shortcut.container.getLC_ALL()));
+        etLC_ALL.setText(shortcut.getExtra("lc_all", container.getLC_ALL()));
 
         final View btShowLCALL = findViewById(R.id.BTShowLCALL);
         btShowLCALL.setOnClickListener(v -> {
@@ -195,7 +242,7 @@ public class ShortcutSettingsDialog extends ContentDialog {
 
         // Non-contentsManager-dependent UI setup (runs immediately)
         final CheckBox cbFullscreenStretched =  findViewById(R.id.CBFullscreenStretched);
-        boolean fullscreenStretched = shortcut.getExtra("fullscreenStretched", "0").equals("1");
+        boolean fullscreenStretched = shortcut.getExtra("fullscreenStretched", container.isFullscreenStretched() ? "1" : "0").equals("1");
         cbFullscreenStretched.setChecked(fullscreenStretched);
 
         final Runnable showInputWarning = () -> ContentDialog.alert(context, R.string.enable_xinput_and_dinput_same_time, null);
@@ -205,7 +252,7 @@ public class ShortcutSettingsDialog extends ContentDialog {
         final View btHelpXInput = findViewById(R.id.BTXInputHelp);
         final View btHelpDInput = findViewById(R.id.BTDInputHelp);
         Spinner SDInputType = findViewById(R.id.SDInputType);
-        int inputType = Integer.parseInt(shortcut.getExtra("inputType", String.valueOf(shortcut.container.getInputType())));
+        int inputType = Integer.parseInt(shortcut.getExtra("inputType", String.valueOf(container.getInputType())));
 
         cbEnableXInput.setChecked((inputType & WinHandler.FLAG_INPUT_TYPE_XINPUT) == WinHandler.FLAG_INPUT_TYPE_XINPUT);
         cbEnableDInput.setChecked((inputType & WinHandler.FLAG_INPUT_TYPE_DINPUT) == WinHandler.FLAG_INPUT_TYPE_DINPUT);
@@ -223,10 +270,9 @@ public class ShortcutSettingsDialog extends ContentDialog {
         SDInputType.setSelection(((inputType & WinHandler.FLAG_DINPUT_MAPPER_STANDARD) == WinHandler.FLAG_DINPUT_MAPPER_STANDARD) ? 0 : 1);
         llDInputType.setVisibility(cbEnableDInput.isChecked()?View.VISIBLE:View.GONE);
 
-        final Spinner sBox64Preset = findViewById(R.id.SBox64Preset);
-        Box64PresetManager.loadSpinner("box64", sBox64Preset, shortcut.getExtra("box64Preset", shortcut.container.getBox64Preset()));
+        Box64PresetManager.loadSpinner("box64", sBox64Preset, shortcut.getExtra("box64Preset", container.getBox64Preset()));
 
-        FEXCorePresetManager.loadSpinner(sFEXCorePreset, shortcut.getExtra("fexcorePreset", shortcut.container.getFEXCorePreset()));
+        FEXCorePresetManager.loadSpinner(sFEXCorePreset, shortcut.getExtra("fexcorePreset", container.getFEXCorePreset()));
 
         final Spinner sControlsProfile = findViewById(R.id.SControlsProfile);
         loadControlsProfileSpinner(sControlsProfile, shortcut.getExtra("controlsProfile", "0"));
@@ -241,11 +287,57 @@ public class ShortcutSettingsDialog extends ContentDialog {
         cbSimTouchScreen.setChecked(isTouchScreenMode.equals("1") ? true : false);
 
         ContainerDetailFragment.createWinComponentsTabFromShortcut(this, getContentView(),
-                shortcut.getExtra("wincomponents", shortcut.container.getWinComponents()), isDarkMode);
+                shortcut.getExtra("wincomponents", container.getWinComponents()), isDarkMode);
 
         final EnvVarsView envVarsView = createEnvVarsTab();
 
         AppUtils.setupTabLayout(getContentView(), R.id.TabLayout, R.id.LLTabWinComponents, R.id.LLTabEnvVars, R.id.LLTabAdvanced);
+
+        final Spinner sStartupSelection = findViewById(R.id.SStartupSelection);
+        sStartupSelection.setSelection(Integer.parseInt(shortcut.getExtra("startupSelection", String.valueOf(container.getStartupSelection()))));
+
+        // --- Reset Button: resets all per-game settings back to container defaults ---
+        Button resetButton = getContentView().findViewById(R.id.BTReset);
+        resetButton.setVisibility(View.VISIBLE);
+        resetButton.setOnClickListener(v -> {
+            // Reset all spinners/checkboxes to container defaults
+            AppUtils.setSpinnerSelectionFromIdentifier(sGraphicsDriver, container.getGraphicsDriver());
+            vGraphicsDriverConfig.setTag(container.getGraphicsDriverConfig());
+            AppUtils.setSpinnerSelectionFromIdentifier(sDXWrapper, container.getDXWrapper());
+            vDXWrapperConfig.setTag(container.getDXWrapperConfig());
+            AppUtils.setSpinnerSelectionFromIdentifier(sAudioDriver, container.getAudioDriver());
+            AppUtils.setSpinnerSelectionFromIdentifier(sEmulator, container.getEmulator());
+            AppUtils.setSpinnerSelectionFromIdentifier(sEmulator64, container.getEmulator64());
+            AppUtils.setSpinnerSelectionFromValue(sMIDISoundFont, container.getMIDISoundFont());
+            etLC_ALL.setText(container.getLC_ALL());
+            cbFullscreenStretched.setChecked(container.isFullscreenStretched());
+
+            int containerInputType = container.getInputType();
+            cbEnableXInput.setChecked((containerInputType & WinHandler.FLAG_INPUT_TYPE_XINPUT) != 0);
+            cbEnableDInput.setChecked((containerInputType & WinHandler.FLAG_INPUT_TYPE_DINPUT) != 0);
+            SDInputType.setSelection(((containerInputType & WinHandler.FLAG_DINPUT_MAPPER_STANDARD) != 0) ? 0 : 1);
+
+            Box64PresetManager.loadSpinner("box64", sBox64Preset, container.getBox64Preset());
+            FEXCorePresetManager.loadSpinner(sFEXCorePreset, container.getFEXCorePreset());
+            AppUtils.setSpinnerSelectionFromValue(sBox64Version, container.getBox64Version());
+            sStartupSelection.setSelection(container.getStartupSelection());
+
+            cbDisabledXInput.setChecked(false);
+            cbSimTouchScreen.setChecked(false);
+
+            // Reset the screen size
+            loadScreenSizeSpinner(getContentView(), container.getScreenSize(), isDarkMode);
+
+            // Reset refresh rate to default (global)
+            loadShortcutRefreshRateSpinner(sRefreshRate, "0");
+
+            // Update all change indicators to remove *
+            for (HashMap.Entry<TextView, String> entry : labelOriginalText.entrySet()) {
+                entry.getKey().setText(entry.getValue());
+            }
+
+            Toast.makeText(context, "Settings reset to container defaults", Toast.LENGTH_SHORT).show();
+        });
 
         TabLayout tabLayout = findViewById(R.id.TabLayout);
 
@@ -267,8 +359,7 @@ public class ShortcutSettingsDialog extends ContentDialog {
             popupMenu.show();
         });
 
-        final Spinner sStartupSelection = findViewById(R.id.SStartupSelection);
-        sStartupSelection.setSelection(Integer.parseInt(shortcut.getExtra("startupSelection", String.valueOf(shortcut.container.getStartupSelection()))));
+
 
         final Spinner sSharpnessEffect = findViewById(R.id.SSharpnessEffect);
         final SeekBar sbSharpnessLevel = findViewById(R.id.SBSharpnessLevel);
@@ -384,6 +475,11 @@ public class ShortcutSettingsDialog extends ContentDialog {
                 String fexcorePreset = FEXCorePresetManager.getSpinnerSelectedId(sFEXCorePreset);
                 shortcut.putExtra("fexcorePreset", fexcorePreset);
 
+                // Save box64Version from spinner (was previously missing!)
+                String selectedBox64Version = sBox64Version.getSelectedItem() != null
+                        ? sBox64Version.getSelectedItem().toString() : "";
+                shortcut.putExtra("box64Version", selectedBox64Version);
+
                 String box64Preset = Box64PresetManager.getSpinnerSelectedId(sBox64Preset);
                 shortcut.putExtra("box64Preset", box64Preset);
 
@@ -403,6 +499,16 @@ public class ShortcutSettingsDialog extends ContentDialog {
 
                 String cpuList = cpuListView.getCheckedCPUListAsString();
                 shortcut.putExtra("cpuList", cpuList);
+
+                // Save per-game refresh rate
+                if (sRefreshRate.getSelectedItem() != null) {
+                    int selectedRate = RefreshRateUtils.parseRefreshRateLabel(sRefreshRate.getSelectedItem().toString());
+                    if (selectedRate <= 0) {
+                        shortcut.putExtra("refreshRate", null); // Remove override, use global
+                    } else {
+                        shortcut.putExtra("refreshRate", String.valueOf(selectedRate));
+                    }
+                }
 
                 // Save all changes to the shortcut
                 shortcut.saveData();
@@ -491,7 +597,8 @@ public class ShortcutSettingsDialog extends ContentDialog {
         Spinner sFEXCoreVersion = view.findViewById(R.id.SFEXCoreVersion);
         Spinner sFEXCorePreset = view.findViewById(R.id.SFEXCorePreset);
         Spinner sStartupSelection = findViewById(R.id.SStartupSelection);
-        
+        Spinner sRefreshRate = view.findViewById(R.id.SRefreshRate);
+
 
         // Set dark or light mode background for spinners
         sGraphicsDriver.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
@@ -506,6 +613,8 @@ public class ShortcutSettingsDialog extends ContentDialog {
         sFEXCorePreset.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
         sFEXCoreVersion.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
         sStartupSelection.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
+        if (sRefreshRate != null)
+            sRefreshRate.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
 
 //        EditText etLC_ALL = view.findViewById(R.id.ETlcall);
         EditText etExecArgs = view.findViewById(R.id.ETExecArgs);
@@ -635,6 +744,32 @@ public class ShortcutSettingsDialog extends ContentDialog {
         ContentDialog.alert(context, R.string.enable_xinput_and_dinput_same_time, null);
     }
 
+    /**
+     * Populate the per-game refresh rate spinner.
+     * First entry is "Default (Global)" which means use the global setting.
+     */
+    private void loadShortcutRefreshRateSpinner(Spinner spinner, String savedValue) {
+        if (fragment.getActivity() == null) return;
+
+        List<String> entries = OtherSettingsFragment.buildRefreshRateEntries(fragment.getActivity());
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(fragment.getContext(), R.layout.spinner_item_themed, entries);
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item_themed);
+        spinner.setAdapter(adapter);
+
+        // Select saved value
+        if (savedValue == null || savedValue.isEmpty() || savedValue.equals("0")) {
+            spinner.setSelection(0); // Default (Global)
+        } else {
+            String target = savedValue + " Hz";
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i).equals(target)) {
+                    spinner.setSelection(i);
+                    break;
+                }
+            }
+        }
+    }
+
     public static void loadBox64VersionSpinner(Context context, ContentsManager manager, Spinner spinner, boolean isArm64EC) {
         List<String> itemList;
         if (isArm64EC)
@@ -733,7 +868,6 @@ public class ShortcutSettingsDialog extends ContentDialog {
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 String selectedVersion = parent.getItemAtPosition(position).toString();
                 box64Version = selectedVersion;
-                shortcut.putExtra("box64Version", selectedVersion);
             }
             @Override
             public void onNothingSelected(AdapterView<?> parent) {}
@@ -741,5 +875,107 @@ public class ShortcutSettingsDialog extends ContentDialog {
 
         FEXCoreManager.loadFEXCoreVersion(context, contentsManager, sFEXCoreVersion,
             shortcut.getExtra("fexcoreVersion", shortcut.container.getFEXCoreVersion()));
+    }
+
+    /**
+     * Set up change-indicator listeners on all per-game setting spinners/controls.
+     * When a user changes a spinner or checkbox away from the container default,
+     * the corresponding label gets a ' *' suffix.
+     */
+    private void setupChangeIndicators(Spinner sGraphicsDriver, Spinner sDXWrapper, Spinner sAudioDriver,
+            Spinner sEmulator, Spinner sEmulator64, Spinner sBox64Version,
+            Spinner sFEXCoreVersion, Spinner sFEXCorePreset, Spinner sBox64Preset,
+            Container container) {
+        // Find all the label TextViews in the shortcut_settings_dialog layout
+        // These are the direct TextViews that precede each spinner
+        View contentView = getContentView();
+        LinearLayout llContent = contentView.findViewById(R.id.LLContent);
+        if (llContent == null) return;
+
+        // Attach change listeners to key spinners
+        attachSpinnerChangeIndicator(sGraphicsDriver, "Graphics Driver", container.getGraphicsDriver(), llContent);
+        attachSpinnerChangeIndicator(sDXWrapper, "DX Wrapper", container.getDXWrapper(), llContent);
+        attachSpinnerChangeIndicator(sAudioDriver, "Audio Driver", container.getAudioDriver(), llContent);
+    }
+
+    /**
+     * Find the label preceding a spinner in the layout and set up a listener
+     * to mark it with '*' when the selection differs from the container default.
+     */
+    private void attachSpinnerChangeIndicator(Spinner spinner, String fallbackLabel, String containerDefault, ViewGroup parent) {
+        if (spinner == null) return;
+
+        // Find the label by looking for the TextView that is a sibling or ancestor-sibling of this spinner
+        TextView label = findLabelForView(spinner, parent);
+        if (label != null) {
+            trackLabel(label);
+            // Set initial state
+            markSpinnerIfChanged(spinner, label, containerDefault);
+        }
+
+        final TextView finalLabel = label;
+        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> adapterView, View view, int position, long id) {
+                if (finalLabel != null) {
+                    markSpinnerIfChanged(spinner, finalLabel, containerDefault);
+                }
+            }
+            @Override
+            public void onNothingSelected(AdapterView<?> adapterView) {}
+        });
+    }
+
+    /**
+     * Walk backwards through siblings of a view's parent to find the nearest preceding TextView.
+     */
+    private TextView findLabelForView(View target, ViewGroup root) {
+        if (target == null || target.getParent() == null) return null;
+        ViewGroup directParent = (ViewGroup) target.getParent();
+
+        // Walk up to find a parent that is a direct child of root (or of LLContent)
+        while (directParent != null && directParent.getParent() != root && directParent.getParent() instanceof ViewGroup) {
+            target = directParent;
+            directParent = (ViewGroup) directParent.getParent();
+        }
+
+        if (directParent == null) return null;
+
+        // Now look for preceding siblings
+        ViewGroup containerParent = (ViewGroup) directParent.getParent();
+        if (containerParent == null) containerParent = directParent;
+
+        int idx = -1;
+        for (int i = 0; i < containerParent.getChildCount(); i++) {
+            if (containerParent.getChildAt(i) == target || containerParent.getChildAt(i) == directParent) {
+                idx = i;
+                break;
+            }
+        }
+
+        // Search backwards for the nearest TextView
+        for (int i = idx - 1; i >= 0; i--) {
+            View child = containerParent.getChildAt(i);
+            if (child instanceof TextView) return (TextView) child;
+            // If it's a ViewGroup, check its last child
+            if (child instanceof ViewGroup) {
+                View found = findLastTextView((ViewGroup) child);
+                if (found instanceof TextView) return (TextView) found;
+            }
+        }
+
+        return null;
+    }
+
+    private TextView findLastTextView(ViewGroup group) {
+        for (int i = group.getChildCount() - 1; i >= 0; i--) {
+            View child = group.getChildAt(i);
+            if (child instanceof TextView) return (TextView) child;
+            if (child instanceof ViewGroup) {
+                TextView found = findLastTextView((ViewGroup) child);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 }
