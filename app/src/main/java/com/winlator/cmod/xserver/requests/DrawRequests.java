@@ -62,6 +62,11 @@ public abstract class DrawRequests {
                 else throw new BadMatch();
                 break;
         }
+        
+        com.winlator.cmod.xserver.Window window = client.xServer.windowManager.getWindow(drawableId);
+        if (window != null) {
+            client.xServer.windowManager.triggerOnFramePresented(window);
+        }
     }
 
     public static void getImage(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {

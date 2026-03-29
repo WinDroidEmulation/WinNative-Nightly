@@ -50,6 +50,14 @@ class PluviaApp : Application() {
         // Record install timestamp for update checker
         UpdateChecker.refreshInstallTimestamp(this)
 
+        // Rotate logs on app cold start (.log → .old.log) so previous
+        // session's logs are preserved until the next full launch.
+        com.winlator.cmod.core.LogManager.rotateLogsOnAppStart(this)
+
+        // Start Application debug logging if enabled (writes PID logcat
+        // in real-time so crash data is persisted even on unexpected termination)
+        com.winlator.cmod.core.LogManager.startAppLogging(this)
+
         DownloadService.populateDownloadService(this)
 
         // Initialize process-wide reactive network state

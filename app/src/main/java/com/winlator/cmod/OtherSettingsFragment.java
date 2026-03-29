@@ -209,6 +209,25 @@ public class OtherSettingsFragment extends Fragment {
 
         cbCheckForUpdates = view.findViewById(R.id.CBCheckForUpdates);
         cbCheckForUpdates.setChecked(preferences.getBoolean("check_for_updates", true));
+        cbCheckForUpdates.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            preferences.edit().putBoolean("check_for_updates", isChecked).apply();
+            if (isChecked) {
+                com.winlator.cmod.core.UpdateChecker.INSTANCE.startBackgroundLoop(context);
+            } else {
+                com.winlator.cmod.core.UpdateChecker.INSTANCE.stopBackgroundLoop();
+            }
+        });
+
+        Button btnCheckForUpdate = view.findViewById(R.id.BTCheckForUpdate);
+        btnCheckForUpdate.setOnClickListener(v -> {
+            boolean started = com.winlator.cmod.core.UpdateChecker.INSTANCE.checkForUpdateManual(context);
+            if (started) {
+                AppUtils.showToast(context, "Checking for updates…");
+            } else {
+                int seconds = com.winlator.cmod.core.UpdateChecker.INSTANCE.manualCheckCooldownSeconds();
+                AppUtils.showToast(context, "Please wait " + seconds + "s before checking again");
+            }
+        });
 
         view.findViewById(R.id.BTReInstallImagefs).setOnClickListener(v -> {
             ContentDialog.confirm(context, R.string.settings_general_confirm_reinstall_imagefs, () -> ImageFsInstaller.installFromAssets((MainActivity) getActivity()));

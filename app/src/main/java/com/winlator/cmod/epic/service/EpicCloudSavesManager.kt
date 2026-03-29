@@ -56,6 +56,22 @@ object EpicCloudSavesManager {
     }
 
     /**
+     * Lightweight probe: checks whether cloud saves need syncing for [appId]
+     * without downloading or uploading any files.
+     *
+     * @return `true` if a sync (download, upload, or conflict resolution) is
+     *         needed, `false` if saves are already up-to-date.
+     */
+    suspend fun needsSync(context: Context, appId: Int): Boolean {
+        val game = EpicService.getEpicGameOf(appId) ?: return false
+        if (!game.cloudSaveEnabled) return false
+        val credentials = EpicAuthManager.getStoredCredentials(context)
+        if (credentials.isFailure) return false
+        val creds = credentials.getOrNull()!!
+        return determineSyncAction(context, creds.accountId, game, "auto") != SyncAction.NONE
+    }
+
+    /**
      * Sync cloud saves for a game (bidirectional sync with conflict detection)
      * preferredAction = download -> Force downloads all files and overwrites current files
      * preferredAction = upload -> Force uploads all files

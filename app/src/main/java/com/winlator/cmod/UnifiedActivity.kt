@@ -367,10 +367,8 @@ class UnifiedActivity : ComponentActivity() {
         }
         libraryRefreshSignal++
 
-        // Check for updates when returning (e.g. after exiting a game/container)
-        // This respects the 1-hour interval, so if the hour elapsed during gameplay
-        // the check triggers now
-        UpdateChecker.checkForUpdate(this, force = false)
+        // (Re)start the background update loop (checks hourly + on first tick)
+        UpdateChecker.startBackgroundLoop(this)
     }
 
     override fun dispatchGenericMotionEvent(event: android.view.MotionEvent): Boolean {
@@ -488,8 +486,8 @@ class UnifiedActivity : ComponentActivity() {
             }
         }
 
-        // Check for app updates on launch (force = true to skip interval on startup)
-        UpdateChecker.checkForUpdate(this, force = true)
+        // Start the background update loop (first check fires after 5 s)
+        UpdateChecker.startBackgroundLoop(this)
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(

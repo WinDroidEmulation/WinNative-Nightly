@@ -3523,6 +3523,27 @@ class SteamService : Service(), IChallengeUrlChanged {
             }
         }
 
+        /**
+         * Lightweight probe: checks whether the cloud save change number for
+         * [appId] differs from the locally stored value.  No files are
+         * downloaded or uploaded – only a single metadata call is made.
+         *
+         * @return `true` if cloud differs, `false` if in sync, `null` if the
+         *         check could not be performed (service unavailable, etc.).
+         */
+        suspend fun cloudSavesDiffer(appId: Int): Boolean? {
+            val steamInstance = instance ?: return null
+            val steamCloud = steamInstance._steamCloud ?: return null
+            val localCN = steamInstance.changeNumbersDao.getByAppId(appId)?.changeNumber ?: return null
+            return try {
+                val fileListChange = steamCloud.getAppFileListChange(appId, localCN).await()
+                fileListChange.currentChangeNumber != localCN
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to probe Steam cloud change number for appId=$appId")
+                null
+            }
+        }
+
         suspend fun forceSyncUserFiles(
             appId: Int,
             prefixToPath: (String) -> String,

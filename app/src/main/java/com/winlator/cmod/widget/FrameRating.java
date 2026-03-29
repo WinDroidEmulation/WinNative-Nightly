@@ -8,6 +8,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.drawable.GradientDrawable;
 import android.os.BatteryManager;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -34,6 +35,7 @@ import java.util.HashMap;
 import java.util.Locale;
 
 public class FrameRating extends LinearLayout implements Runnable {
+    private static final String TAG = "FrameRating";
     private final int C_BAT;
     private final int C_CPU;
     private final int C_DIVISOR;
@@ -72,6 +74,7 @@ public class FrameRating extends LinearLayout implements Runnable {
     private long lastTime;
     private volatile String ramText;
     private String rendererName;
+    private String gpuName;
     private final View sep0;
     private final View sep1;
     private final View sep2;
@@ -79,11 +82,27 @@ public class FrameRating extends LinearLayout implements Runnable {
     private Handler statsHandler;
     private Runnable statsRunnable;
     private HandlerThread statsThread;
+    private Handler uiRefreshHandler;
+    private Runnable uiRefreshRunnable;
     private final TextView tvFpsBig;
     private final TextView tvGpuLoad;
     private final TextView tvHardwareStats;
     private final TextView tvRenderer;
     private final TextView tvWattsTemp;
+
+    // ── GPU load caching (prevents N/A flickering from transient sysfs failures)
+    private int lastGoodGpuLoad = -1;
+    private long lastGoodGpuTime = 0;
+    private static final long GPU_CACHE_DURATION_MS = 5000;
+
+    // ── Tap-cycle display modes ──────────────────────────────────────
+    // Mode 0: horizontal, no backdrop
+    // Mode 1: horizontal, 50% shadow backdrop
+    // Mode 2: vertical, 50% shadow backdrop
+    // Mode 3: vertical, no backdrop
+    private int displayMode = 0;
+    private static final int MODE_COUNT = 4;
+    private GradientDrawable backdropDrawable;
 
     public FrameRating(Context context, HashMap graphicsDriverConfig) {
         this(context, graphicsDriverConfig, null);
@@ -113,12 +132,15 @@ public class FrameRating extends LinearLayout implements Runnable {
         this.cpuTemp = -1;
         this.ramText = "N/A";
         this.rendererName = "OpenGL";
+        this.gpuName = null;
         this.canReadGpu = true;
         this.canReadCpu = true;
         this.canReadBatt = true;
         this.gpuFailCount = 0;
         this.cpuFailCount = 0;
         this.battFailCount = 0;
+        this.lastGoodGpuLoad = -1;
+        this.lastGoodGpuTime = 0;
         this.isNativeActive = false;
         this.isStatsRunning = false;
         this.C_VALUE = Color.parseColor("#FFFFFF");
@@ -155,7 +177,18 @@ public class FrameRating extends LinearLayout implements Runnable {
         if (this.tvFpsBig != null) {
             this.tvFpsBig.setText("60");
         }
-        setupDragListener();
+
+        // Create backdrop drawable (rounded, semi-transparent black)
+        this.backdropDrawable = new GradientDrawable();
+        this.backdropDrawable.setColor(0x80000000); // 50% black
+        this.backdropDrawable.setCornerRadius(8f);
+
+        // Detect GPU name from sysfs on init
+        if (this.gpuName == null) {
+            detectGpuNameFromSysfs();
+        }
+
+        setupTapAndDragListener();
         initStatsThread();
     }
 
@@ -173,6 +206,8 @@ public class FrameRating extends LinearLayout implements Runnable {
         };
     }
 
+
+
     private void startStatsUpdate() {
         if (this.isStatsRunning) {
             return;
@@ -182,6 +217,20 @@ public class FrameRating extends LinearLayout implements Runnable {
         this.statsThread.start();
         this.statsHandler = new Handler(this.statsThread.getLooper());
         this.statsHandler.post(this.statsRunnable);
+
+        // Independent UI refresh timer — ensures hardware stats always refresh
+        // on screen even if update() is not called (e.g. frameRatingWindowId mismatch).
+        this.uiRefreshHandler = new Handler(android.os.Looper.getMainLooper());
+        this.uiRefreshRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isStatsRunning) {
+                    FrameRating.this.run();
+                    uiRefreshHandler.postDelayed(this, 500L);
+                }
+            }
+        };
+        this.uiRefreshHandler.postDelayed(this.uiRefreshRunnable, 500L);
     }
 
     private void stopStatsUpdate() {
@@ -193,6 +242,11 @@ public class FrameRating extends LinearLayout implements Runnable {
             this.statsThread.quitSafely();
             this.statsThread = null;
             this.statsHandler = null;
+        }
+        if (this.uiRefreshHandler != null) {
+            this.uiRefreshHandler.removeCallbacks(this.uiRefreshRunnable);
+            this.uiRefreshHandler = null;
+            this.uiRefreshRunnable = null;
         }
     }
 
@@ -213,11 +267,15 @@ public class FrameRating extends LinearLayout implements Runnable {
         stopStatsUpdate();
     }
 
-    private void setupDragListener() {
+    // ── Touch: tap cycles display mode, drag moves HUD ───────────────
+    private void setupTapAndDragListener() {
         setOnTouchListener(new View.OnTouchListener() {
             private int activePointerId = -1;
-            private float dX;
-            private float dY;
+            private float dX, dY;
+            private float downRawX, downRawY;
+            private long downTime;
+            private boolean isDragging = false;
+            private static final float TAP_SLOP = 20f;
 
             @Override
             public boolean onTouch(View view, MotionEvent event) {
@@ -230,26 +288,64 @@ public class FrameRating extends LinearLayout implements Runnable {
                         this.activePointerId = event.getPointerId(0);
                         this.dX = view.getX() - event.getRawX();
                         this.dY = view.getY() - event.getRawY();
+                        this.downRawX = event.getRawX();
+                        this.downRawY = event.getRawY();
+                        this.downTime = SystemClock.elapsedRealtime();
+                        this.isDragging = false;
                         view.bringToFront();
                         return true;
+                    case MotionEvent.ACTION_MOVE:
+                        if (this.activePointerId != -1) {
+                            float dx = Math.abs(event.getRawX() - this.downRawX);
+                            float dy = Math.abs(event.getRawY() - this.downRawY);
+                            if (dx > TAP_SLOP || dy > TAP_SLOP) {
+                                this.isDragging = true;
+                            }
+                            if (this.isDragging) {
+                                view.setX(event.getRawX() + this.dX);
+                                view.setY(event.getRawY() + this.dY);
+                            }
+                            return true;
+                        }
+                        break;
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
                         if (this.activePointerId != -1) {
+                            long elapsed = SystemClock.elapsedRealtime() - this.downTime;
+                            if (!this.isDragging && elapsed < 400) {
+                                // Short tap → cycle display mode
+                                cycleDisplayMode();
+                            }
                             this.activePointerId = -1;
                             return true;
                         }
                         return false;
-                    case MotionEvent.ACTION_MOVE:
-                        if (this.activePointerId != -1) {
-                            view.setX(event.getRawX() + this.dX);
-                            view.setY(event.getRawY() + this.dY);
-                            return true;
-                        }
-                        break;
                 }
                 return false;
             }
         });
+    }
+
+    private void cycleDisplayMode() {
+        displayMode = (displayMode + 1) % MODE_COUNT;
+        applyDisplayMode();
+    }
+
+    private void applyDisplayMode() {
+        boolean horizontal;
+        boolean showBackdrop;
+        switch (displayMode) {
+            case 0: horizontal = true;  showBackdrop = false; break;
+            case 1: horizontal = true;  showBackdrop = true;  break;
+            case 2: horizontal = false; showBackdrop = true;  break;
+            case 3: horizontal = false; showBackdrop = false; break;
+            default: horizontal = true; showBackdrop = false; break;
+        }
+        setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        setBackground(showBackdrop ? backdropDrawable : null);
+        setPadding(showBackdrop ? 8 : 2, showBackdrop ? 6 : 2, showBackdrop ? 8 : 2, showBackdrop ? 6 : 2);
+        updateSeparators(horizontal);
+        requestLayout();
     }
 
     public void setRenderer(String renderer) {
@@ -258,6 +354,12 @@ public class FrameRating extends LinearLayout implements Runnable {
         }
         if (renderer.contains("DXVK")) {
             this.rendererName = "DXVK";
+        } else if (renderer.contains("VKD3D")) {
+            this.rendererName = "VKD3D";
+        } else if (renderer.contains("OpenGL")) {
+            this.rendererName = "OpenGL";
+        } else if (renderer.contains("Vulkan") || renderer.toLowerCase().contains("vulkan")) {
+            this.rendererName = "Vulkan";
         } else if (renderer.contains("Turnip")) {
             this.rendererName = "Turnip";
         } else if (renderer.contains("VirGL")) {
@@ -265,7 +367,11 @@ public class FrameRating extends LinearLayout implements Runnable {
         } else if (renderer.contains("llvmpipe")) {
             this.rendererName = "Software";
         } else {
-            this.rendererName = renderer.replaceAll(".*Wrapper ", "").trim();
+            this.rendererName = renderer
+                .replaceAll("(?i).*Wrapper\\s*", "")
+                .replaceAll("(?i)\\s*\\(Wrapper\\)", "")
+                .replaceAll("(?i)\\s*Wrapper", "")
+                .trim();
         }
         updateRendererText();
     }
@@ -284,13 +390,70 @@ public class FrameRating extends LinearLayout implements Runnable {
 
     private void updateRendererText() {
         if (this.tvRenderer != null) {
-            this.tvRenderer.setText((this.isNativeActive ? "+" : "") + this.rendererName);
+            String text = (this.isNativeActive ? "+" : "") + this.rendererName;
+            if (this.gpuName != null && !this.gpuName.isEmpty()) {
+                text += " (" + this.gpuName + ")";
+            }
+            this.tvRenderer.setText(text);
             this.tvRenderer.setVisibility(this.enableRenderer ? View.VISIBLE : View.GONE);
             updateSeparators(getOrientation() == LinearLayout.HORIZONTAL);
         }
     }
 
     public void setGpuName(String name) {
+        if (name != null && !name.isEmpty()) {
+            // Clean up property format "name = value"
+            String clean = name.contains("=") ? name.substring(name.indexOf("=") + 1).trim() : name;
+            // Remove quotes
+            clean = clean.replace("\"", "").replace("'", "").trim();
+            if (!clean.isEmpty()) {
+                this.gpuName = clean;
+                post(this::updateRendererText);
+            }
+        }
+    }
+
+    /**
+     * Attempt to detect GPU name from sysfs (works for Qualcomm Adreno).
+     */
+    private void detectGpuNameFromSysfs() {
+        try {
+            // Adreno: read the GPU model from kgsl
+            File gpuModel = new File("/sys/class/kgsl/kgsl-3d0/gpu_model");
+            if (gpuModel.exists() && gpuModel.canRead()) {
+                try (BufferedReader r = new BufferedReader(new FileReader(gpuModel))) {
+                    String line = r.readLine();
+                    if (line != null && !line.trim().isEmpty()) {
+                        this.gpuName = "Adreno " + line.trim();
+                        return;
+                    }
+                }
+            }
+            // Try /sys/kernel/gpu/gpu_model (some Qualcomm kernels)
+            File gpuModel2 = new File("/sys/kernel/gpu/gpu_model");
+            if (gpuModel2.exists() && gpuModel2.canRead()) {
+                try (BufferedReader r = new BufferedReader(new FileReader(gpuModel2))) {
+                    String line = r.readLine();
+                    if (line != null && !line.trim().isEmpty()) {
+                        this.gpuName = line.trim();
+                        return;
+                    }
+                }
+            }
+            // Mali: check /sys/class/misc/mali0 existence
+            File mali = new File("/sys/class/misc/mali0");
+            if (mali.exists()) {
+                this.gpuName = "Mali";
+                return;
+            }
+            // PowerVR
+            File pvr = new File("/sys/kernel/debug/pvr");
+            if (pvr.exists()) {
+                this.gpuName = "PowerVR";
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "Could not detect GPU from sysfs: " + e.getMessage());
+        }
     }
 
     public void reset() {
@@ -362,7 +525,6 @@ public class FrameRating extends LinearLayout implements Runnable {
     }
 
     private void updateSeparators(boolean horizontal) {
-        int i = View.GONE;
         if (!horizontal) {
             if (this.sep0 != null) this.sep0.setVisibility(View.GONE);
             if (this.sep1 != null) this.sep1.setVisibility(View.GONE);
@@ -389,6 +551,10 @@ public class FrameRating extends LinearLayout implements Runnable {
         }
     }
 
+    /**
+     * Called by the X server rendering loop for each application window content change.
+     * This is the primary FPS source — counts actual game frame updates.
+     */
     public void update() {
         if (getVisibility() != View.VISIBLE) {
             return;
@@ -398,7 +564,7 @@ public class FrameRating extends LinearLayout implements Runnable {
         }
         long time = SystemClock.elapsedRealtime();
         if (time >= this.lastTime + 500) {
-            this.lastFPS = (this.frameCount * 1000) / (time - this.lastTime);
+            this.lastFPS = (this.frameCount * 1000f) / (time - this.lastTime);
             post(this);
             this.lastTime = time;
             this.frameCount = 0;
@@ -500,12 +666,20 @@ public class FrameRating extends LinearLayout implements Runnable {
     private void calculateStats() {
         if (this.enableGpu && this.canReadGpu) {
             try {
-                this.gpuLoad = calculateGPULoad();
+                int load = calculateGPULoad();
+                this.gpuLoad = load;
+                this.lastGoodGpuLoad = load;
+                this.lastGoodGpuTime = SystemClock.elapsedRealtime();
                 this.gpuFailCount = 0;
             } catch (Exception e) {
-                this.gpuLoad = -1;
+                // Use cached value if recent enough, otherwise show -1
+                long elapsed = SystemClock.elapsedRealtime() - this.lastGoodGpuTime;
+                if (this.lastGoodGpuLoad >= 0 && elapsed < GPU_CACHE_DURATION_MS) {
+                    this.gpuLoad = this.lastGoodGpuLoad;
+                } else {
+                    this.gpuLoad = -1;
+                }
                 this.gpuFailCount++;
-                if (this.gpuFailCount > 5) this.canReadGpu = false;
             }
         }
         if (this.enableCpuRam) {
@@ -526,7 +700,6 @@ public class FrameRating extends LinearLayout implements Runnable {
                 } catch (Exception e) {
                     this.cpuPercent = -1;
                     this.cpuFailCount++;
-                    if (this.cpuFailCount > 5) this.canReadCpu = false;
                 }
             }
             try {
@@ -552,7 +725,6 @@ public class FrameRating extends LinearLayout implements Runnable {
             } catch (Exception e) {
                 this.batteryWatts = -1.0f; this.cpuTemp = -1;
                 this.battFailCount++;
-                if (this.battFailCount > 5) this.canReadBatt = false;
             }
         }
     }

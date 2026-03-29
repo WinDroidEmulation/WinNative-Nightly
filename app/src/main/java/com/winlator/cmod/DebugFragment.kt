@@ -33,6 +33,7 @@ import java.util.zip.ZipOutputStream
 
 class DebugFragment : Fragment() {
     private lateinit var preferences: SharedPreferences
+    private lateinit var cbEnableAppDebug: CompoundButton
     private lateinit var cbEnableWineDebug: CompoundButton
     private lateinit var cbEnableBox64Logs: CompoundButton
     private lateinit var cbEnableFexcoreLogs: CompoundButton
@@ -49,6 +50,19 @@ class DebugFragment : Fragment() {
         val view = inflater.inflate(R.layout.advanced_fragment, container, false)
         val context = requireContext()
         preferences = PreferenceManager.getDefaultSharedPreferences(context)
+
+        // Application Debug toggle (at top)
+        cbEnableAppDebug = view.findViewById(R.id.CBEnableAppDebug)
+        cbEnableAppDebug.isChecked = preferences.getBoolean("enable_app_debug", false)
+        cbEnableAppDebug.setOnCheckedChangeListener { _, isChecked ->
+            preferences.edit { putBoolean("enable_app_debug", isChecked) }
+            if (isChecked) {
+                com.winlator.cmod.core.LogManager.startAppLogging(context)
+            } else {
+                com.winlator.cmod.core.LogManager.stopAppLogging()
+                com.winlator.cmod.core.LogManager.updateLoggingState(context)
+            }
+        }
 
         val wineChannelSection = view.findViewById<View>(R.id.LLWineDebugChannelSection)
 
@@ -121,10 +135,9 @@ class DebugFragment : Fragment() {
 
     private fun shareLogs() {
         val context = requireContext()
-        val logsDir = com.winlator.cmod.core.LogManager.getLogsDir(context)
-        val files = logsDir.listFiles()
+        val files = com.winlator.cmod.core.LogManager.getShareableLogFiles(context)
         
-        if (files == null || files.isEmpty()) {
+        if (files.isEmpty()) {
             AppUtils.showToast(context, "No debug logs available. Enable debugging options first and launch a game.")
             return
         }

@@ -26,20 +26,36 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.regex.Pattern
 
 object UpdateChecker {
 
-    private const val BASE_URL = "https://winnative.dev/Downloads/"
-    private const val STANDARD_APK = "standard.apk"
-    private const val LUDASHI_APK = "ludashi.apk"
-    private const val RELEASE_NOTES_URL = "${BASE_URL}release.txt"
+    private const val DOWNLOADS_PAGE_URL = "https://winnative.dev/Downloads/"
+    private const val RELEASE_NOTES_URL = "${DOWNLOADS_PAGE_URL}release.txt"
 
     private const val PREF_CHECK_FOR_UPDATES = "check_for_updates"
     private const val PREF_INSTALL_TIMESTAMP = "app_install_timestamp"
     private const val PREF_LAST_UPDATE_CHECK = "last_update_check_time"
 
-    private const val CHECK_INTERVAL_MS = 60 * 60 * 1000L // 1 hour
+    private const val CHECK_INTERVAL_MS = 60 * 60 * 1000L       // 1 hour
+    private const val MANUAL_CHECK_COOLDOWN_MS = 30 * 1000L      // 30 seconds
+    private const val POST_GAME_CHECK_DELAY_MS = 10 * 1000L      // 10 seconds
+
+    /** Tracks the last manual check time for 30s cooldown. */
+    private val lastManualCheckTime = AtomicLong(0L)
+
+    /** Prevents overlapping background checks. */
+    private val isChecking = AtomicBoolean(false)
+
+    /** Background handler for periodic checks. */
+    private var backgroundHandler: Handler? = null
+    private var backgroundRunnable: Runnable? = null
+
+    /** Post-game exit handler. */
+    private var postGameHandler: Handler? = null
+    private var postGameRunnable: Runnable? = null
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -49,8 +65,10 @@ object UpdateChecker {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // ── Public API ────────────────────────────────────────────────────
+
     /**
-     * Returns true if the user has the "Check for Updates" toggle enabled (default: true).
+     * Returns true if the user has the "Check for Updates" toggle enabled.
      */
     fun isEnabled(context: Context): Boolean {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
@@ -58,13 +76,19 @@ object UpdateChecker {
     }
 
     /**
-     * Records the current time as the app install timestamp if not already set.
-     * Should be called on first launch or after an update install.
+     * Records the app install/update timestamp from PackageManager.
+     * Should be called once during Application.onCreate().
      */
-    fun recordInstallTimestamp(context: Context) {
+    fun refreshInstallTimestamp(context: Context) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        if (!prefs.contains(PREF_INSTALL_TIMESTAMP)) {
-            prefs.edit().putLong(PREF_INSTALL_TIMESTAMP, System.currentTimeMillis()).apply()
+        try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            val installTime = pInfo.lastUpdateTime.coerceAtLeast(pInfo.firstInstallTime)
+            prefs.edit().putLong(PREF_INSTALL_TIMESTAMP, installTime).apply()
+        } catch (e: PackageManager.NameNotFoundException) {
+            if (!prefs.contains(PREF_INSTALL_TIMESTAMP)) {
+                prefs.edit().putLong(PREF_INSTALL_TIMESTAMP, System.currentTimeMillis()).apply()
+            }
         }
     }
 
@@ -78,21 +102,108 @@ object UpdateChecker {
     }
 
     /**
-     * Gets the APK filename for the current build flavor.
+     * Starts the hourly background loop when auto-update is enabled.
+     * Call from the main Activity's onResume/onCreate.
      */
-    private fun getApkFilename(context: Context): String {
-        val packageName = context.packageName
-        return if (packageName == "com.ludashi.benchmark") LUDASHI_APK else STANDARD_APK
+    fun startBackgroundLoop(context: Context) {
+        stopBackgroundLoop()
+        if (!isEnabled(context)) return
+
+        val appContext = context.applicationContext
+        backgroundHandler = Handler(Looper.getMainLooper())
+        backgroundRunnable = object : Runnable {
+            override fun run() {
+                if (isEnabled(appContext)) {
+                    checkForUpdate(appContext, force = false)
+                    backgroundHandler?.postDelayed(this, CHECK_INTERVAL_MS)
+                }
+            }
+        }
+        // First tick after 5 seconds (give the app time to finish initialising)
+        backgroundHandler?.postDelayed(backgroundRunnable!!, 5_000L)
     }
 
     /**
-     * Perform an update check in the background.
-     * If an update is available, shows a dialog on the main thread.
-     * @param force If true, skips the interval check (used for app startup).
+     * Stops the hourly background loop.  Call from onDestroy or when the
+     * toggle is turned off.
+     */
+    fun stopBackgroundLoop() {
+        backgroundRunnable?.let { backgroundHandler?.removeCallbacks(it) }
+        backgroundHandler = null
+        backgroundRunnable = null
+    }
+
+    /**
+     * Perform an automatic update check. Skipped if not due or already running.
+     * @param force If true, bypasses the interval timer (first app open).
      */
     fun checkForUpdate(context: Context, force: Boolean = false) {
         if (!isEnabled(context)) return
         if (!force && !isDueForCheck(context)) return
+        launchCheck(context)
+    }
+
+    /**
+     * Manual "Check" button — respects a 30-second cooldown.
+     * @return `true` if the check was started, `false` if still in cooldown.
+     */
+    fun checkForUpdateManual(context: Context): Boolean {
+        val now = System.currentTimeMillis()
+        val last = lastManualCheckTime.get()
+        if (now - last < MANUAL_CHECK_COOLDOWN_MS) return false
+        lastManualCheckTime.set(now)
+        launchCheck(context)
+        return true
+    }
+
+    /**
+     * Returns the remaining cooldown in seconds for the manual check button.
+     * Returns 0 if the button is ready.
+     */
+    fun manualCheckCooldownSeconds(): Int {
+        val elapsed = System.currentTimeMillis() - lastManualCheckTime.get()
+        val remaining = MANUAL_CHECK_COOLDOWN_MS - elapsed
+        return if (remaining > 0) ((remaining + 999) / 1000).toInt() else 0
+    }
+
+    /**
+     * Schedule a deferred update check after a game exits.
+     * If another game is launched before the delay, cancel the pending check
+     * via [cancelPostGameCheck].
+     */
+    fun schedulePostGameCheck(context: Context) {
+        cancelPostGameCheck()
+        val appContext = context.applicationContext
+        postGameHandler = Handler(Looper.getMainLooper())
+        postGameRunnable = Runnable {
+            checkForUpdate(appContext, force = true)
+        }
+        postGameHandler?.postDelayed(postGameRunnable!!, POST_GAME_CHECK_DELAY_MS)
+    }
+
+    /**
+     * Cancel the pending post-game check (e.g. user launched another game).
+     */
+    fun cancelPostGameCheck() {
+        postGameRunnable?.let { postGameHandler?.removeCallbacks(it) }
+        postGameHandler = null
+        postGameRunnable = null
+    }
+
+    /**
+     * Resets the last-check timer so the next periodic tick runs immediately.
+     */
+    fun resetCheckTimer(context: Context) {
+        PreferenceManager.getDefaultSharedPreferences(context)
+            .edit()
+            .putLong(PREF_LAST_UPDATE_CHECK, 0L)
+            .apply()
+    }
+
+    // ── Internal ──────────────────────────────────────────────────────
+
+    private fun launchCheck(context: Context) {
+        if (!isChecking.compareAndSet(false, true)) return
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -109,19 +220,10 @@ object UpdateChecker {
                     .apply()
             } catch (e: Exception) {
                 Timber.e(e, "Update check failed")
+            } finally {
+                isChecking.set(false)
             }
         }
-    }
-
-    /**
-     * Resets the last check time so the next check will run immediately.
-     * Called when exiting a game/container to trigger a deferred check.
-     */
-    fun resetCheckTimer(context: Context) {
-        PreferenceManager.getDefaultSharedPreferences(context)
-            .edit()
-            .putLong(PREF_LAST_UPDATE_CHECK, 0L)
-            .apply()
     }
 
     data class UpdateInfo(
@@ -132,53 +234,58 @@ object UpdateChecker {
         val releaseNotes: String?
     )
 
+    /**
+     * Fetches the Downloads page HTML, parses the "Last Updated:" line,
+     * and compares it against the app's install timestamp.
+     *
+     * This is the fastest approach — a single lightweight GET of the HTML
+     * page rather than HEAD requests through the download.php redirector.
+     */
     private fun fetchUpdateInfo(context: Context): UpdateInfo? {
-        val apkFilename = getApkFilename(context)
-        val apkUrl = "$BASE_URL$apkFilename"
-
-        // HEAD request to get Last-Modified header
-        val headRequest = Request.Builder()
-            .url(apkUrl)
-            .head()
+        // 1.  Fetch the HTML page
+        val pageRequest = Request.Builder()
+            .url(DOWNLOADS_PAGE_URL)
+            .header("Cache-Control", "no-cache")
             .build()
 
-        val headResponse = client.newCall(headRequest).execute()
-        if (!headResponse.isSuccessful) {
-            Timber.w("Update check HEAD request failed: ${headResponse.code}")
+        val pageResponse = client.newCall(pageRequest).execute()
+        if (!pageResponse.isSuccessful) {
+            Timber.w("Update check page request failed: ${pageResponse.code}")
             return null
         }
 
-        val lastModifiedHeader = headResponse.header("Last-Modified") ?: return null
+        val pageBody = pageResponse.body?.string() ?: return null
 
-        // Parse server last-modified time
-        val serverDate = parseHttpDate(lastModifiedHeader) ?: return null
+        // 2.  Parse "Last Updated: March 29, 2026, 5:46 am EDT"
+        val pattern = Pattern.compile(
+            """Last\s+Updated:\s*(.+?)(?:\r?\n|<)""",
+            Pattern.CASE_INSENSITIVE
+        )
+        val matcher = pattern.matcher(pageBody)
+        if (!matcher.find()) {
+            Timber.w("Could not find 'Last Updated' on downloads page")
+            return null
+        }
 
-        // Get install timestamp
+        val lastUpdatedStr = matcher.group(1)?.trim() ?: return null
+        val serverDate = parseLastUpdatedDate(lastUpdatedStr) ?: run {
+            Timber.w("Could not parse 'Last Updated' date: $lastUpdatedStr")
+            return null
+        }
+
+        // 3.  Compare with install timestamp
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val installTimestamp = prefs.getLong(PREF_INSTALL_TIMESTAMP, System.currentTimeMillis())
 
-        // Also get the currently installed version name for comparison
-        val currentVersionName = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        } catch (e: PackageManager.NameNotFoundException) {
-            null
+        if (serverDate.time <= installTimestamp) {
+            return null // No update available
         }
 
-        // Try to extract version from the directory listing page
-        val serverVersionName = fetchServerVersionName(apkFilename)
+        // 4.  Build download URL based on package name
+        val apkType = if (context.packageName == "com.ludashi.benchmark") "ludashi" else "standard"
+        val downloadUrl = "${DOWNLOADS_PAGE_URL}download.php?type=$apkType"
 
-        // Determine if update is available:
-        // 1. Server file is newer than when app was installed
-        // 2. OR server version name is different from installed version
-        val isNewer = serverDate.time > installTimestamp
-        val versionDiffers = serverVersionName != null && currentVersionName != null &&
-                serverVersionName != currentVersionName
-
-        if (!isNewer && !versionDiffers) {
-            return null // No update
-        }
-
-        // Fetch release notes
+        // 5.  Fetch optional release notes
         val releaseNotes = fetchReleaseNotes()
 
         val dateFormat = SimpleDateFormat("MMM dd, yyyy 'at' hh:mm a", Locale.US)
@@ -187,39 +294,33 @@ object UpdateChecker {
         return UpdateInfo(
             serverModified = serverDate,
             serverModifiedFormatted = dateFormat.format(serverDate),
-            serverVersionName = serverVersionName,
-            downloadUrl = apkUrl,
+            serverVersionName = null,
+            downloadUrl = downloadUrl,
             releaseNotes = releaseNotes
         )
     }
 
     /**
-     * Fetches the directory listing page to try to extract version info.
-     * The server may show file details in the HTML listing.
+     * Parses date strings like "March 29, 2026, 5:46 am EDT".
      */
-    private fun fetchServerVersionName(apkFilename: String): String? {
-        return try {
-            val request = Request.Builder()
-                .url(BASE_URL)
-                .build()
-
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return null
-
-            val body = response.body?.string() ?: return null
-
-            // Look for version patterns near the APK filename in the listing
-            // Common pattern: version like "7.1.4x-cmod" or similar
-            val versionPattern = Pattern.compile(
-                """$apkFilename.*?(\d+\.\d+\.\d+\w*(?:-\w+)?)""",
-                Pattern.DOTALL
-            )
-            val matcher = versionPattern.matcher(body)
-            if (matcher.find()) matcher.group(1) else null
-        } catch (e: Exception) {
-            Timber.d(e, "Could not fetch server version name")
-            null
+    private fun parseLastUpdatedDate(dateStr: String): Date? {
+        val formats = arrayOf(
+            "MMMM d, yyyy, h:mm a z",
+            "MMMM d, yyyy, h:mm a zzz",
+            "MMMM dd, yyyy, h:mm a z",
+            "MMMM dd, yyyy, h:mm a zzz",
+            "MMMM d, yyyy, hh:mm a z",
+            "MMMM d, yyyy, hh:mm a zzz",
+            "MMMM dd, yyyy, hh:mm a z",
+            "MMMM dd, yyyy, hh:mm a zzz",
+        )
+        for (format in formats) {
+            try {
+                val sdf = SimpleDateFormat(format, Locale.US)
+                return sdf.parse(dateStr)
+            } catch (_: Exception) { }
         }
+        return null
     }
 
     private fun fetchReleaseNotes(): String? {
@@ -240,22 +341,6 @@ object UpdateChecker {
         }
     }
 
-    private fun parseHttpDate(dateStr: String): Date? {
-        val formats = arrayOf(
-            "EEE, dd MMM yyyy HH:mm:ss z",   // RFC 1123
-            "EEEE, dd-MMM-yy HH:mm:ss z",    // RFC 1036
-            "EEE MMM d HH:mm:ss yyyy"         // ANSI C asctime()
-        )
-        for (format in formats) {
-            try {
-                val sdf = SimpleDateFormat(format, Locale.US)
-                sdf.timeZone = TimeZone.getTimeZone("GMT")
-                return sdf.parse(dateStr)
-            } catch (_: Exception) { }
-        }
-        return null
-    }
-
     private fun showUpdateDialog(context: Context, info: UpdateInfo) {
         if (context is android.app.Activity && context.isFinishing) return
 
@@ -274,17 +359,6 @@ object UpdateChecker {
             textSize = 14f
         }
         container.addView(releasedLabel)
-
-        // Version (if available)
-        if (info.serverVersionName != null) {
-            val versionLabel = TextView(context).apply {
-                text = "Version: ${info.serverVersionName}"
-                setTextColor(0xFFB0B0B0.toInt())
-                textSize = 14f
-                setPadding(0, smallPad, 0, 0)
-            }
-            container.addView(versionLabel)
-        }
 
         // Release notes
         if (!info.releaseNotes.isNullOrBlank()) {
@@ -319,13 +393,10 @@ object UpdateChecker {
             }
 
             val scrollView = ScrollView(context).apply {
-                val maxHeight = (200 * context.resources.displayMetrics.density).toInt()
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    height = LinearLayout.LayoutParams.WRAP_CONTENT
-                }
+                )
                 addView(notesBody)
             }
             container.addView(scrollView)
@@ -342,23 +413,5 @@ object UpdateChecker {
             .create()
 
         dialog.show()
-    }
-
-    /**
-     * Updates the install timestamp to now. Call after the user installs an update,
-     * or on each app start to keep it accurate.
-     */
-    fun refreshInstallTimestamp(context: Context) {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        try {
-            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            val installTime = pInfo.lastUpdateTime.coerceAtLeast(pInfo.firstInstallTime)
-            prefs.edit().putLong(PREF_INSTALL_TIMESTAMP, installTime).apply()
-        } catch (e: PackageManager.NameNotFoundException) {
-            // If we can't get package info, record now
-            if (!prefs.contains(PREF_INSTALL_TIMESTAMP)) {
-                prefs.edit().putLong(PREF_INSTALL_TIMESTAMP, System.currentTimeMillis()).apply()
-            }
-        }
     }
 }
