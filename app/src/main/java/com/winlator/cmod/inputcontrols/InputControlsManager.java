@@ -7,6 +7,7 @@ import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Environment;
 import android.util.JsonReader;
+import android.util.Log;
 
 import androidx.preference.PreferenceManager;
 
@@ -70,10 +71,10 @@ public class InputControlsManager {
         int newVersion = AppUtils.getVersionCode(context);
         int oldVersion = preferences.getInt("inputcontrols_app_version", 0);
         int oldSyncRevision = preferences.getInt("inputcontrols_asset_sync_revision", 0);
-        if (oldVersion == newVersion && oldSyncRevision >= ASSET_PROFILE_SYNC_REVISION) return;
+        if (oldVersion == newVersion && oldSyncRevision >= 1) return;
         preferences.edit()
                 .putInt("inputcontrols_app_version", newVersion)
-                .putInt("inputcontrols_asset_sync_revision", ASSET_PROFILE_SYNC_REVISION)
+                .putInt("inputcontrols_asset_sync_revision", 1)
                 .apply();
 
         File[] files = profilesDir.listFiles();
@@ -98,6 +99,9 @@ public class InputControlsManager {
                 if (targetFile != null) {
                     FileUtils.copy(context, assetPath, targetFile);
                 }
+                else {
+                    FileUtils.copy(context, assetPath, new File(profilesDir, assetFile));
+                }
             }
         }
         catch (IOException e) {}
@@ -112,8 +116,12 @@ public class InputControlsManager {
         if (files != null) {
             for (File file : files) {
                 ControlsProfile profile = loadProfile(context, file);
-                if (!(ignoreTemplates && profile.isTemplate())) profiles.add(profile);
-                maxProfileId = Math.max(maxProfileId, profile.id);
+                if (profile != null) {
+                    if (!ignoreTemplates || !profile.isTemplate()) {
+                        profiles.add(profile);
+                    }
+                    maxProfileId = Math.max(maxProfileId, profile.id);
+                }
             }
         }
 
@@ -124,7 +132,8 @@ public class InputControlsManager {
 
     public ControlsProfile createProfile(String name) {
         if (!profilesLoaded) loadProfiles(false);
-        ControlsProfile profile = new ControlsProfile(context, ++maxProfileId);
+        int newId = ++maxProfileId;
+        ControlsProfile profile = new ControlsProfile(context, newId);
         profile.setName(name);
         profile.save();
         profiles.add(profile);
@@ -170,12 +179,22 @@ public class InputControlsManager {
 
     public ControlsProfile importProfile(JSONObject data) {
         try {
-            if (!data.has("id") || !data.has("name")) return null;
+            if (!data.has("name")) {
+                Log.e("ICManager", "importProfile: data missing 'name' field: " + data.toString());
+                return null;
+            }
             int newId = ++maxProfileId;
             File newFile = ControlsProfile.getProfileFile(context, newId);
             data.put("id", newId);
             FileUtils.writeString(newFile, data.toString());
             ControlsProfile newProfile = loadProfile(context, newFile);
+
+            if (newProfile == null) {
+                Log.e("ICManager", "importProfile: loadProfile returned null for " + newFile.getPath());
+                // If writing was successful, still return a basic profile object
+                newProfile = new ControlsProfile(context, newId);
+                newProfile.setName(data.optString("name", "Imported Profile"));
+            }
 
             int foundIndex = -1;
             for (int i = 0; i < profiles.size(); i++) {
@@ -193,6 +212,7 @@ public class InputControlsManager {
             return newProfile;
         }
         catch (JSONException e) {
+            Log.e("ICManager", "importProfile: JSONException", e);
             return null;
         }
     }
@@ -252,9 +272,14 @@ public class InputControlsManager {
             }
 
             ControlsProfile profile = new ControlsProfile(context, profileId);
-            profile.setName(profileName);
-            profile.setCursorSpeed(cursorSpeed);
-            return profile;
+            if (profileName != null) {
+                profile.setName(profileName);
+                profile.setCursorSpeed(cursorSpeed);
+                reader.close();
+                return profile;
+            }
+            reader.close();
+            return null;
         }
         catch (IOException e) {
             return null;

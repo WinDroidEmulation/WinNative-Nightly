@@ -67,6 +67,7 @@ class ScreenEffectDialog(private val activity: XServerDisplayActivity) {
             window?.apply {
                 setBackgroundDrawableResource(android.R.color.transparent)
                 setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
+                setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
             }
         }
 
@@ -116,7 +117,10 @@ class ScreenEffectDialog(private val activity: XServerDisplayActivity) {
             setLayout(dm.widthPixels, WindowManager.LayoutParams.WRAP_CONTENT)
         }
     }
-    fun dismiss() = dialog.dismiss()
+    fun dismiss() {
+        AppUtils.hideKeyboard(activity)
+        dialog.dismiss()
+    }
 
     // -- Profile management --
 

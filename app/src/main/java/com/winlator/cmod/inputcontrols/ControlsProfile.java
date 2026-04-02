@@ -210,7 +210,8 @@ public class ControlsProfile implements Comparable<ControlsProfile> {
         if (file.isFile()) {
             try {
                 String jsonStr = FileUtils.readString(file);
-                JSONObject obj = new JSONObject(jsonStr != null ? jsonStr : "{}");
+                if (jsonStr == null) return 0;
+                JSONObject obj = new JSONObject(jsonStr);
                 if (obj.has("elements")) {
                     return obj.getJSONArray("elements").length();
                 }
@@ -233,7 +234,9 @@ public class ControlsProfile implements Comparable<ControlsProfile> {
         if (!file.isFile()) return controllers;
 
         try {
-            JSONObject profileJSONObject = new JSONObject(FileUtils.readString(file));
+            String jsonStr = FileUtils.readString(file);
+            if (jsonStr == null) return controllers;
+            JSONObject profileJSONObject = new JSONObject(jsonStr);
             if (!profileJSONObject.has("controllers")) return controllers;
             JSONArray controllersJSONArray = profileJSONObject.getJSONArray("controllers");
             for (int i = 0; i < controllersJSONArray.length(); i++) {
@@ -270,7 +273,9 @@ public class ControlsProfile implements Comparable<ControlsProfile> {
         if (!file.isFile()) return;
 
         try {
-            JSONObject profileJSONObject = new JSONObject(FileUtils.readString(file));
+            String jsonStr = FileUtils.readString(file);
+            if (jsonStr == null) return;
+            JSONObject profileJSONObject = new JSONObject(jsonStr);
             JSONArray elementsJSONArray = profileJSONObject.getJSONArray("elements");
             for (int i = 0; i < elementsJSONArray.length(); i++) {
                 JSONObject elementJSONObject = elementsJSONArray.getJSONObject(i);

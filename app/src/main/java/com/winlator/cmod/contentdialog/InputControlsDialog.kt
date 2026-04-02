@@ -39,6 +39,7 @@ class InputControlsDialog(private val activity: Activity) {
             window?.apply {
                 setBackgroundDrawableResource(android.R.color.transparent)
                 setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
+                setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
             }
         }
 
@@ -97,5 +98,8 @@ class InputControlsDialog(private val activity: Activity) {
         }
     }
 
-    fun dismiss() = dialog.dismiss()
+    fun dismiss() {
+        com.winlator.cmod.core.AppUtils.hideKeyboard(activity)
+        dialog.dismiss()
+    }
 }

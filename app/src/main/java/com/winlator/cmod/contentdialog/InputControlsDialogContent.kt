@@ -34,22 +34,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import android.app.Activity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.winlator.cmod.R
+import com.winlator.cmod.core.AppUtils
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
-// Reuse the same near-black palette as ScreenEffectDialog
-private val BgDark        = Color(0xFF0A0A0F)
-private val SurfaceDark   = Color(0xFF111118)
-private val CardBorder    = Color(0xFF1E1E2A)
+// Color scheme matching updated UI
+private val BgDark        = Color(0xFF151E2A)
+private val SurfaceDark   = Color(0xFF1A2432)
+private val CardBorder    = Color(0xFF25364A)
 private val Accent        = Color(0xFF1A9FFF)
-private val TextPrimary   = Color(0xFFE8ECF4)
-private val TextSecondary = Color(0xFF6E7A8A)
-private val DividerColor  = Color(0xFF1C1C28)
-private val CheckBorder   = Color(0xFF3A3A4A)
+private val TextPrimary   = Color(0xFFF5F9FF)
+private val TextSecondary = Color(0xFF9CB0C7)
+private val DividerColor  = Color(0xFF25364A)
+private val CheckBorder   = Color(0xFF2D425A)
 
 data class InputControlsState(
     val profileNames: List<String> = emptyList(),
@@ -187,6 +190,7 @@ private fun ProfileRow(
     onSettingsClick: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val disabledPlaceholder = stringResource(R.string.common_ui_disabled_placeholder)
     val selectedText = profileNames.getOrElse(selectedIndex) { disabledPlaceholder }
 
@@ -226,6 +230,7 @@ private fun ProfileRow(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
+                                AppUtils.hideKeyboard(context as? Activity)
                                 onProfileSelected(index)
                                 expanded = false
                             }

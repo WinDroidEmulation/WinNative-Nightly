@@ -93,6 +93,7 @@ public class ContentDialog extends Dialog {
 
         View confirmButton = contentView.findViewById(R.id.BTConfirm);
         confirmButton.setOnClickListener((v) -> {
+            AppUtils.hideKeyboard(v);
             if (onConfirmCallback != null) onConfirmCallback.run();
             dismiss();
         });
@@ -103,7 +104,18 @@ public class ContentDialog extends Dialog {
             dismiss();
         });
 
+        if (getWindow() != null) {
+            getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN |
+                                         android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+        }
+
         setContentView(contentView);
+    }
+
+    @Override
+    public void dismiss() {
+        AppUtils.hideKeyboard(contentView);
+        super.dismiss();
     }
 
     public View getInflatedLayout() {

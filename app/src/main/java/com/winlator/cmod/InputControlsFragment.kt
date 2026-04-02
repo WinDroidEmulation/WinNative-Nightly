@@ -143,10 +143,29 @@ class InputControlsFragment(private val selectedProfileId: Int) : Fragment() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE.toInt() && resultCode == Activity.RESULT_OK) {
             try {
-                val imported = manager.importProfile(JSONObject(FileUtils.readString(requireContext(), data?.data)))
-                importProfileCallback?.invoke(imported)
+                val jsonString = FileUtils.readString(requireContext(), data?.data)
+                if (jsonString.isNullOrBlank()) {
+                    AppUtils.showToast(requireContext(), getString(R.string.input_controls_editor_unable_to_import) + ": Empty file")
+                } else {
+                    val imported = try {
+                        manager.importProfile(JSONObject(jsonString))
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    if (imported != null) {
+                        importProfileCallback?.invoke(imported)
+                    } else {
+                        // The profile might have been imported (file written) even if manager.importProfile returns null
+                        // so we reload profiles just in case to let user see it in the list if it partially succeeded
+                        manager.loadProfiles(false)
+                        submitRows()
+                        AppUtils.showToast(requireContext(), getString(R.string.input_controls_editor_unable_to_import) + ": Invalid profile data")
+                    }
+                }
             } catch (e: Exception) {
-                AppUtils.showToast(requireContext(), R.string.input_controls_editor_unable_to_import)
+                Log.e(TAG, "Error importing profile", e)
+                AppUtils.showToast(requireContext(), getString(R.string.input_controls_editor_unable_to_import) + ": " + e.message)
             }
             importProfileCallback = null
         }
@@ -391,14 +410,82 @@ class InputControlsFragment(private val selectedProfileId: Int) : Fragment() {
         var selectedIndex = profiles.indexOfFirst { it == currentProfile }
         if (selectedIndex < 0) selectedIndex = 0
 
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.input_controls_editor_select_profile)
-            .setSingleChoiceItems(names, selectedIndex) { dialog, which ->
-                onProfileSelected(profiles[which])
-                dialog.dismiss()
+        val ctx = requireContext()
+        val dialog = ContentDialog(ctx)
+        dialog.contentView.findViewById<View>(R.id.BTConfirm).visibility = View.GONE
+
+        // Compact title
+        val tvTitle = dialog.findViewById<TextView>(R.id.TVTitle)
+        tvTitle.textSize = 16f
+        val titleRow = tvTitle.parent as View
+        titleRow.minimumHeight = (24 * ctx.resources.displayMetrics.density).toInt()
+        val titleBar = dialog.findViewById<View>(R.id.LLTitleBar) as android.widget.LinearLayout
+        val divider = titleBar.getChildAt(1)
+        val dp = ctx.resources.displayMetrics.density
+        (divider.layoutParams as android.widget.LinearLayout.LayoutParams).apply {
+            topMargin = (6 * dp).toInt()
+            bottomMargin = (6 * dp).toInt()
+        }
+
+        // Compact cancel button
+        val btnCancel = dialog.findViewById<Button>(R.id.BTCancel)
+        btnCancel.textSize = 12f
+        btnCancel.minimumHeight = 0
+        btnCancel.minHeight = 0
+        val cancelPadV = (4 * dp).toInt()
+        val cancelPadH = (12 * dp).toInt()
+        btnCancel.setPadding(cancelPadH, cancelPadV, cancelPadH, cancelPadV)
+
+        // Compact bottom bar margins
+        val bottomBar = dialog.findViewById<View>(R.id.LLBottomBar) as android.widget.LinearLayout
+        (bottomBar.layoutParams as android.widget.LinearLayout.LayoutParams).topMargin = (4 * dp).toInt()
+        val bottomDivider = bottomBar.getChildAt(0)
+        (bottomDivider.layoutParams as android.widget.LinearLayout.LayoutParams).apply {
+            topMargin = (2 * dp).toInt()
+            bottomMargin = (6 * dp).toInt()
+        }
+
+        // Compact dialog padding
+        val root = dialog.contentView as View
+        val padH = (14 * dp).toInt()
+        val padTop = (12 * dp).toInt()
+        val padBot = (10 * dp).toInt()
+        root.setPadding(padH, padTop, padH, padBot)
+
+        // Prevent keyboard glitch by ensuring EditText doesn't get focus
+        dialog.findViewById<View>(R.id.EditText).apply {
+            visibility = View.GONE
+            isFocusable = false
+            isFocusableInTouchMode = false
+        }
+
+        val listView = dialog.findViewById<android.widget.ListView>(R.id.ListView)
+        listView.layoutParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
+        listView.layoutParams.height = (220 * ctx.resources.displayMetrics.density).toInt()
+        listView.choiceMode = android.widget.ListView.CHOICE_MODE_NONE
+
+        val adapter = object : android.widget.BaseAdapter() {
+            private var selectedPos = selectedIndex
+            override fun getCount() = names.size
+            override fun getItem(pos: Int) = names[pos]
+            override fun getItemId(pos: Int) = pos.toLong()
+            override fun getView(pos: Int, convertView: View?, parent: ViewGroup): View {
+                val row = convertView ?: LayoutInflater.from(ctx).inflate(R.layout.compact_single_choice_item, parent, false)
+                row.findViewById<TextView>(android.R.id.text1).text = names[pos]
+                row.findViewById<android.widget.RadioButton>(R.id.RBIndicator).isChecked = pos == selectedPos
+                return row
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            fun select(pos: Int) { selectedPos = pos; notifyDataSetChanged() }
+        }
+        listView.adapter = adapter
+        listView.visibility = View.VISIBLE
+        listView.setOnItemClickListener { _, _, position, _ ->
+            adapter.select(position)
+            dialog.dismiss()
+            onProfileSelected(profiles[position])
+        }
+        dialog.setTitle(R.string.input_controls_editor_select_profile)
+        dialog.show()
     }
 
     @Suppress("deprecation")

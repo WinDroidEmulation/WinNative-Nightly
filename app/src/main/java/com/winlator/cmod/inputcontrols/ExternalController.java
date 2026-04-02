@@ -172,7 +172,12 @@ public class ExternalController {
 
     @Override
     public boolean equals(@Nullable Object obj) {
-        return obj instanceof ExternalController ? ((ExternalController) obj).id.equals(this.id) : super.equals(obj);
+        if (obj instanceof ExternalController) {
+            ExternalController other = (ExternalController) obj;
+            if (id == null || other.id == null) return id == other.id;
+            return id.equals(other.id);
+        }
+        return false;
     }
 
     private void processJoystickInput(MotionEvent event, int historyPos) {
