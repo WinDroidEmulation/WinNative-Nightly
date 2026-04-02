@@ -99,6 +99,9 @@ public class InputControlsManager {
                 if (targetFile != null) {
                     FileUtils.copy(context, assetPath, targetFile);
                 }
+                else {
+                    FileUtils.copy(context, assetPath, new File(profilesDir, assetFile));
+                }
             }
         }
         catch (IOException e) {}
