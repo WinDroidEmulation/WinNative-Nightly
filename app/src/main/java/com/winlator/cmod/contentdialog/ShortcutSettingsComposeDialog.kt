@@ -23,6 +23,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.winlator.cmod.BuildConfig
 import com.winlator.cmod.OtherSettingsFragment
 import com.winlator.cmod.R
 import com.winlator.cmod.SetupWizardActivity
@@ -1192,6 +1193,10 @@ class ShortcutSettingsComposeDialog private constructor(
 
     private fun addShortcutToScreen(shortcut: Shortcut): Boolean {
         if (shortcut.getExtra("uuid").isEmpty()) shortcut.genUUID()
+        val shortcutId = shortcut.getExtra("uuid")
+        if (shortcutId.isEmpty()) return false
+        val canonicalShortcutPath = shortcut.file.absolutePath
+        val shortcutPathHash = canonicalShortcutPath.hashCode()
         val shortcutManager = context.getSystemService(ShortcutManager::class.java)
             ?: return false
         if (!shortcutManager.isRequestPinShortcutSupported) return false
@@ -1201,11 +1206,26 @@ class ShortcutSettingsComposeDialog private constructor(
         else Icon.createWithResource(context, R.drawable.icon_shortcut)
 
         val intent = Intent(context, XServerDisplayActivity::class.java).apply {
+            val containerIdForLaunch = shortcut.getExtra("container_id").toIntOrNull() ?: shortcut.container.id
+            val launchData = android.net.Uri.Builder()
+                .scheme("winnative")
+                .authority(BuildConfig.APPLICATION_ID)
+                .appendPath("shortcut")
+                .appendQueryParameter("uuid", shortcutId)
+                .appendQueryParameter("container", containerIdForLaunch.toString())
+                .appendQueryParameter("hash", shortcutPathHash.toString())
+                .build()
             action = Intent.ACTION_VIEW
-            putExtra("container_id", shortcut.container.id)
-            putExtra("shortcut_path", shortcut.file.path)
+            data = launchData
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra("container_id", containerIdForLaunch)
+            putExtra("shortcut_path", canonicalShortcutPath)
+            putExtra("shortcut_name", shortcut.name)
+            putExtra("shortcut_uuid", shortcutId)
+            putExtra("shortcut_path_hash", shortcutPathHash)
         }
-        val info = ShortcutInfo.Builder(context, shortcut.getExtra("uuid"))
+        val pinShortcutId = "shortcut_${shortcut.container.id}_${shortcutId}_${shortcutPathHash.toUInt().toString(16)}"
+        val info = ShortcutInfo.Builder(context, pinShortcutId)
             .setShortLabel(shortcut.name)
             .setLongLabel(shortcut.name)
             .setIcon(shortcutIcon)

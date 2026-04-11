@@ -239,6 +239,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private long startTime;
     private SharedPreferences playtimePrefs;
     private String shortcutName;
+    private String cachedDisplayName = "";
+    private String cachedPlatform = "";
+    private String cachedContainerLabel = "";
     private Handler handler;
     private Runnable savePlaytimeRunnable;
     private static final long SAVE_INTERVAL_MS = 1000;
@@ -814,7 +817,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if ("STEAM".equals(gameSource)) {
                 String appIdStr = shortcut.getExtra("app_id");
                 if (!appIdStr.isEmpty()) {
-                    String gameInstallPath = SteamBridge.getAppDirPath(Integer.parseInt(appIdStr));
+                    String gameInstallPath = resolveSteamGameInstallPath(Integer.parseInt(appIdStr));
                     if (new File(gameInstallPath).exists()) {
                         shortcut.putExtra("game_install_path", gameInstallPath);
                         shortcut.saveData();
@@ -995,11 +998,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
             };
         }
 
-        if (shortcutName != null && !shortcutName.isEmpty()) {
-            preloaderDialog.show("Starting " + shortcutName + "...");
-        } else {
-            preloaderDialog.show("Starting Container...");
-        }
+        cachedPlatform = shortcut != null ? shortcut.getExtra("game_source") : "";
+        if (cachedPlatform == null) cachedPlatform = "";
+        cachedDisplayName = (shortcutName != null && !shortcutName.isEmpty())
+                ? shortcutName
+                : getString(R.string.preloader_default_name);
+        cachedContainerLabel = container != null ? container.getName() : "";
+        showLaunchPreloader(getString(R.string.preloader_initializing));
 
         inputControlsManager = new InputControlsManager(this);
         xServer = new XServer(new ScreenInfo(screenSize));
@@ -1099,10 +1104,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
                         if (CloudSyncHelper.isStoreGame(shortcut)) {
                             if (!CloudSyncHelper.hasLocalCloudSaves(this, shortcut)) {
                                 // First launch — download silently
-                                preloaderDialog.showOnUiThread("Downloading Cloud Saves\u2026");
+                                showLaunchPreloader(getString(R.string.preloader_downloading_cloud));
                                 CloudSyncHelper.downloadCloudSaves(this, shortcut);
-                                preloaderDialog.showOnUiThread("Starting " +
-                                        (shortcutName != null ? shortcutName : "Container") + "...");
+                                showLaunchPreloader(getString(R.string.preloader_initializing));
                             } else if (CloudSyncHelper.cloudSavesDiffer(this, shortcut)) {
                                 // Cloud differs from local — ask the user what to do
                                 final CountDownLatch dialogLatch = new CountDownLatch(1);
@@ -1127,10 +1131,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
                                 } catch (InterruptedException ignored) {}
 
                                 if (useCloud[0]) {
-                                    preloaderDialog.showOnUiThread("Syncing Cloud Saves\u2026");
+                                    showLaunchPreloader(getString(R.string.preloader_syncing_cloud));
                                     CloudSyncHelper.downloadCloudSaves(this, shortcut);
-                                    preloaderDialog.showOnUiThread("Starting " +
-                                            (shortcutName != null ? shortcutName : "Container") + "...");
+                                    showLaunchPreloader(getString(R.string.preloader_initializing));
                                 }
                             }
                         }
@@ -1319,6 +1322,49 @@ public class XServerDisplayActivity extends AppCompatActivity {
             }
         }
         return shortcut.path;
+    }
+
+    private String getActiveGameDirectoryPath() {
+        if (shortcut == null) return null;
+
+        String[] candidatePaths = new String[] {
+                shortcut.getExtra("game_install_path"),
+                shortcut.getExtra("custom_game_folder"),
+                shortcut.getExtra("custom_mount_path")
+        };
+
+        for (String candidatePath : candidatePaths) {
+            if (candidatePath == null || candidatePath.isEmpty()) continue;
+            File candidateDir = new File(candidatePath);
+            if (candidateDir.isDirectory()) return candidateDir.getAbsolutePath();
+        }
+
+        return null;
+    }
+
+    private String resolveSteamGameInstallPath(int appId) {
+        if (shortcut != null) {
+            String shortcutInstallPath = shortcut.getExtra("game_install_path");
+            if (shortcutInstallPath != null && !shortcutInstallPath.isEmpty()) {
+                File shortcutInstallDir = new File(shortcutInstallPath);
+                if (shortcutInstallDir.isDirectory()) {
+                    return shortcutInstallDir.getAbsolutePath();
+                }
+            }
+        }
+
+        String serviceInstallPath = SteamBridge.getAppDirPath(appId);
+        if (serviceInstallPath == null || serviceInstallPath.isEmpty()) return serviceInstallPath;
+
+        File serviceInstallDir = new File(serviceInstallPath);
+        if (serviceInstallDir.isDirectory() && shortcut != null) {
+            String shortcutInstallPath = shortcut.getExtra("game_install_path");
+            if (!serviceInstallDir.getAbsolutePath().equals(shortcutInstallPath)) {
+                shortcut.putExtra("game_install_path", serviceInstallDir.getAbsolutePath());
+                shortcut.saveData();
+            }
+        }
+        return serviceInstallDir.getAbsolutePath();
     }
 
     private boolean parseBoolean(String value) {
@@ -1919,6 +1965,22 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }).start();
     }
 
+    private void showLaunchPreloader(String text) {
+        if (preloaderDialog == null) return;
+        preloaderDialog.showOnUiThread(text, cachedDisplayName, cachedPlatform, cachedContainerLabel);
+    }
+
+    private void showLaunchPreloaderProgress(String text, int percent) {
+        if (preloaderDialog == null) return;
+        preloaderDialog.showProgressOnUiThread(
+                text,
+                cachedDisplayName,
+                cachedPlatform,
+                cachedContainerLabel,
+                Math.max(0, Math.min(100, percent))
+        );
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -2345,7 +2407,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (isSteamGame) {
                 try {
                     int appId = Integer.parseInt(shortcut.getExtra("app_id"));
-                    String gameInstallPath = SteamBridge.getAppDirPath(appId);
+                    String gameInstallPath = resolveSteamGameInstallPath(appId);
                     File gameDir = new File(gameInstallPath);
                     String language = container.getExtra("containerLanguage", "english");
                     if (language == null || language.isEmpty()) language = "english";
@@ -2469,7 +2531,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                             // Write ColdClientLoader.ini with game exe path
                             String gameExeWinPath = findGameExeWinPath(appId, gameDir);
                             if (gameExeWinPath != null) {
-                                writeColdClientIniForLaunch(appId, gameExeWinPath);
+                                writeColdClientIniForLaunch(appId, gameInstallPath, gameExeWinPath);
                                 Log.d("XServerDisplayActivity", "ColdClient launcher configured for appId=" + appId);
                             } else {
                                 Log.w("XServerDisplayActivity", "Could not find game exe for ColdClient, appId=" + appId);
@@ -2557,7 +2619,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         WineStartMenuCreator.create(this, container);
-        WineUtils.createDosdevicesSymlinks(container);
+        WineUtils.createDosdevicesSymlinks(container, getActiveGameDirectoryPath());
 
         int inputType = container.getInputType();
         if (shortcut != null) {
@@ -3879,7 +3941,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     // ColdClient mode: pick loader matching game exe architecture
                     File nativeDir = com.winlator.cmod.core.WineUtils.getNativePath(imageFs, "C:\\Program Files (x86)\\Steam");
                     if (nativeDir != null && nativeDir.exists()) launcherComponent.setWorkingDir(nativeDir);
-                    String gameInstPath = SteamBridge.getAppDirPath(appId);
+                    String gameInstPath = resolveSteamGameInstallPath(appId);
                     String gameExe = findGameExeWinPath(appId, new File(gameInstPath));
                     File gameExeFile = gameExe != null ? com.winlator.cmod.core.WineUtils.getNativePath(imageFs, gameExe) : null;
                     boolean use64BitLoader = gameExeFile == null || com.winlator.cmod.core.PEHelper.is64Bit(gameExeFile);
@@ -3889,7 +3951,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 } else {
                     // Goldberg mode (default): launch game exe from within Steam's directory structure
                     // using steamapps\common\<game> symlink, NOT from A: drive directly
-                    String gameInstPathDir = SteamBridge.getAppDirPath(appId);
+                    String gameInstPathDir = resolveSteamGameInstallPath(appId);
                     String gameDirName = new File(gameInstPathDir).getName();
                     String gameExeWinPath = findGameExeWinPath(appId, new File(gameInstPathDir));
                     
@@ -3938,7 +4000,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 }
                 extraArgs = (extraArgs != null && !extraArgs.isEmpty()) ? " " + extraArgs : "";
 
-                boolean needsAutoDetect = path == null || path.isEmpty() || "A:\\".equals(path) || "A:\\\\".equals(path);
+                boolean needsAutoDetect = path == null || path.isEmpty()
+                        || "D:\\".equals(path) || "D:\\\\".equals(path)
+                        || "A:\\".equals(path) || "A:\\\\".equals(path);
                 if (needsAutoDetect) {
                     String gameInstallPath = shortcut.getExtra("game_install_path");
                     if ((gameInstallPath == null || gameInstallPath.isEmpty()) && gameSource.equals("GOG")) {
@@ -4224,12 +4288,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
      * @param appId Steam app ID
      * @param gameExeWinPath Windows-style path to the game exe (e.g. A:\SubDir\game.exe)
      */
-    private void writeColdClientIniForLaunch(int appId, String gameExeWinPath) {
+    private void writeColdClientIniForLaunch(int appId, String gameInstallPath, String gameExeWinPath) {
         File iniFile = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/ColdClientLoader.ini");
         iniFile.getParentFile().mkdirs();
 
         String exePath;
-        String gameInstallPath = SteamBridge.getAppDirPath(appId);
         String gameDirName = new File(gameInstallPath).getName();
 
         if (gameExeWinPath != null) {
@@ -4650,7 +4713,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (shortcut == null || !"STEAM".equals(shortcut.getExtra("game_source"))) return;
         try {
             int appId = Integer.parseInt(shortcut.getExtra("app_id"));
-            String gameInstallPath = SteamBridge.getAppDirPath(appId);
+            String gameInstallPath = resolveSteamGameInstallPath(appId);
             if (gameInstallPath == null || gameInstallPath.isEmpty()) return;
 
             String executablePath = container.getExecutablePath();
@@ -4680,7 +4743,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (shortcut == null || !"STEAM".equals(shortcut.getExtra("game_source"))) return false;
         try {
             int appId = Integer.parseInt(shortcut.getExtra("app_id"));
-            String gameInstallPath = SteamBridge.getAppDirPath(appId);
+            String gameInstallPath = resolveSteamGameInstallPath(appId);
             if (gameInstallPath == null || gameInstallPath.isEmpty()) return false;
 
             String executablePath = container.getExecutablePath();
@@ -4774,7 +4837,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         // Find the game's _CommonRedist directory using custom download path
-        String gameInstallPath = SteamBridge.getAppDirPath(appId);
+        String gameInstallPath = resolveSteamGameInstallPath(appId);
         if (gameInstallPath == null || gameInstallPath.isEmpty()) return;
 
         File commonRedistDir = new File(gameInstallPath, "_CommonRedist");
@@ -4813,11 +4876,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                             // Skip known non-installer files
                             if (exeName.startsWith("unins") || exeName.equals("detect.exe")) continue;
 
-                            // Build the Wine path using A: drive (game is mounted there)
-                            String relPath = exe.getAbsolutePath()
-                                    .substring(gameInstallPath.length())
-                                    .replace('/', '\\');
-                            String winPath = "A:" + relPath;
+                            String winPath = WineUtils.getWindowsPath(container, exe.getAbsolutePath());
 
                             try {
                                 Log.d("XServerDisplayActivity", "Running redistributable: " + winPath);
@@ -4879,7 +4938,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             return;
         }
 
-        String gameInstallPath = SteamBridge.getAppDirPath(appId);
+        String gameInstallPath = resolveSteamGameInstallPath(appId);
         if (gameInstallPath == null || gameInstallPath.isEmpty()) return;
 
         // Mono is now installed by installMonoIfNeeded() in the pre-game setup flow.
