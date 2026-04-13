@@ -1,5 +1,6 @@
 package com.winlator.cmod.runtime.wine;
 
+import android.util.Log;
 import com.winlator.cmod.shared.io.FileUtils;
 import com.winlator.cmod.shared.io.StreamUtils;
 import com.winlator.cmod.shared.math.Mathf;
@@ -19,6 +20,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 public class WineRegistryEditor implements Closeable {
+  private static final String TAG = "WineRegistryEditor";
   private final File file;
   private final File cloneFile;
   private boolean modified = false;
@@ -94,8 +96,12 @@ public class WineRegistryEditor implements Closeable {
   }
 
   private Location createKey(String key) {
+    return createKey(key, null);
+  }
+
+  private Location createKey(String key, Location insertionPoint) {
     lastParentKeyPosition = 0;
-    Location location = getParentKeyLocation(key);
+    Location location = insertionPoint != null ? insertionPoint : getParentKeyLocation(key);
     boolean success = false;
     int offset = 0;
     int totalLength = 0;
@@ -136,6 +142,7 @@ public class WineRegistryEditor implements Closeable {
       while ((length = reader.read(buffer)) != -1) writer.write(buffer, 0, length);
       success = true;
     } catch (IOException e) {
+      Log.e(TAG, "Failed to create registry key: " + key, e);
     }
 
     if (success) {
@@ -146,6 +153,21 @@ public class WineRegistryEditor implements Closeable {
       tempFile.delete();
       return null;
     }
+  }
+
+  private Location ensureKey(String key) {
+    Location existingLocation = getKeyLocation(key);
+    if (existingLocation != null) return existingLocation;
+
+    int lastIndex = key.lastIndexOf("\\");
+    if (lastIndex != -1) {
+      String parentKey = key.substring(0, lastIndex);
+      Location parentLocation = ensureKey(parentKey);
+      if (parentLocation == null) return null;
+      return createKey(key, parentLocation);
+    }
+
+    return createKey(key, null);
   }
 
   public String getStringValue(String key, String name) {
@@ -219,8 +241,12 @@ public class WineRegistryEditor implements Closeable {
     Location keyLocation = getKeyLocation(key);
     if (keyLocation == null) {
       if (createKeyIfNotExist) {
-        keyLocation = createKey(key);
+        keyLocation = ensureKey(key);
       } else return;
+    }
+    if (keyLocation == null) {
+      Log.e(TAG, "Unable to resolve registry key for write: " + key);
+      return;
     }
 
     Location valueLocation = getValueLocation(keyLocation, name);
@@ -291,6 +317,101 @@ public class WineRegistryEditor implements Closeable {
     return removed;
   }
 
+  public boolean hasKey(String key) {
+    lastParentKeyPosition = 0;
+    return getKeyLocation(key) != null;
+  }
+
+  public String exportKeyTree(String key) {
+    lastParentKeyPosition = 0;
+    StringBuilder content = new StringBuilder();
+    Location location;
+    while ((location = getKeyLocation(key, true)) != null) {
+      String block = readRegion(location);
+      if (block == null || block.isEmpty()) break;
+      if (content.length() > 0 && content.charAt(content.length() - 1) != '\n') {
+        content.append('\n');
+      }
+      content.append(block);
+      removeRegion(location);
+    }
+    return content.toString();
+  }
+
+  public boolean appendRawContent(String rawContent) {
+    if (rawContent == null || rawContent.trim().isEmpty()) return true;
+
+    char[] buffer = new char[StreamUtils.BUFFER_SIZE];
+    boolean success = false;
+    File tempFile =
+        FileUtils.createTempFile(file.getParentFile(), FileUtils.getBasename(file.getPath()));
+
+    try (BufferedReader reader =
+            new BufferedReader(new FileReader(cloneFile), StreamUtils.BUFFER_SIZE);
+        BufferedWriter writer =
+            new BufferedWriter(new FileWriter(tempFile), StreamUtils.BUFFER_SIZE)) {
+      int length;
+      while ((length = reader.read(buffer)) != -1) writer.write(buffer, 0, length);
+
+      if (cloneFile.length() > 0) {
+        writer.write("\n");
+      }
+      writer.write(rawContent.trim());
+      writer.write("\n");
+      success = true;
+    } catch (IOException e) {
+      Log.e(TAG, "Failed to append raw registry content", e);
+    }
+
+    if (success) {
+      modified = true;
+      tempFile.renameTo(cloneFile);
+    } else tempFile.delete();
+    return success;
+  }
+
+  public boolean removeKeyTreeByPrefix(String key) {
+    if (key == null || key.isEmpty()) return false;
+
+    String rawContent = FileUtils.readString(cloneFile);
+    if (rawContent == null || rawContent.isEmpty()) return false;
+
+    String escapedKey = key.replace("\\", "\\\\");
+    String prefix = "[" + escapedKey;
+    StringBuilder rebuilt = new StringBuilder();
+    boolean capturing = false;
+    boolean removed = false;
+
+    String[] lines = rawContent.split("\n", -1);
+    for (String line : lines) {
+      if (line.startsWith("[")) {
+        if (capturing && !line.startsWith(prefix)) {
+          capturing = false;
+        }
+        if (!capturing && line.startsWith(prefix)) {
+          capturing = true;
+          removed = true;
+        }
+      }
+      if (!capturing) {
+        rebuilt.append(line).append('\n');
+      }
+    }
+
+    if (!removed) return false;
+
+    File tempFile =
+        FileUtils.createTempFile(file.getParentFile(), FileUtils.getBasename(file.getPath()));
+    if (!FileUtils.writeString(tempFile, rebuilt.toString())) {
+      tempFile.delete();
+      return false;
+    }
+
+    modified = true;
+    tempFile.renameTo(cloneFile);
+    return true;
+  }
+
   private boolean removeRegion(Location location) {
     char[] buffer = new char[StreamUtils.BUFFER_SIZE];
     boolean success = false;
@@ -322,6 +443,19 @@ public class WineRegistryEditor implements Closeable {
       tempFile.renameTo(cloneFile);
     } else tempFile.delete();
     return success;
+  }
+
+  private String readRegion(Location location) {
+    char[] buffer = new char[location.end - location.offset];
+    try (BufferedReader reader =
+        new BufferedReader(new FileReader(cloneFile), StreamUtils.BUFFER_SIZE)) {
+      reader.skip(location.offset);
+      int read = reader.read(buffer);
+      return read > 0 ? new String(buffer, 0, read) : "";
+    } catch (IOException e) {
+      Log.e(TAG, "Failed to read registry region", e);
+      return null;
+    }
   }
 
   private Location getKeyLocation(String key) {
@@ -388,6 +522,7 @@ public class WineRegistryEditor implements Closeable {
   }
 
   private Location getValueLocation(Location keyLocation, String name) {
+    if (keyLocation == null) return null;
     if (keyLocation.start == keyLocation.end) return null;
     try (BufferedReader reader =
         new BufferedReader(new FileReader(cloneFile), StreamUtils.BUFFER_SIZE)) {

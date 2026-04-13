@@ -29,7 +29,7 @@ public abstract class WineUtils {
       @Nullable Container container, @Nullable String hostPath) {
     if (hostPath == null || hostPath.isEmpty()) return "";
 
-    String normalizedHostPath = new File(hostPath).getAbsolutePath();
+    String normalizedHostPath = normalizeHostPath(hostPath);
     String bestDriveLetter = null;
     String bestDriveRoot = null;
 
@@ -42,7 +42,7 @@ public abstract class WineUtils {
       if (drive.length < 2) continue;
       String driveLetter = drive[0];
       if ("A".equalsIgnoreCase(driveLetter)) continue;
-      String driveRoot = new File(drive[1]).getAbsolutePath();
+      String driveRoot = normalizeHostPath(drive[1]);
       if (!pathStartsWith(normalizedHostPath, driveRoot)) continue;
 
       if (bestDriveRoot == null || driveRoot.length() > bestDriveRoot.length()) {
@@ -67,6 +67,15 @@ public abstract class WineUtils {
     if (path.equals(basePath)) return true;
     if (basePath.endsWith(File.separator)) return path.startsWith(basePath);
     return path.startsWith(basePath + File.separator);
+  }
+
+  private static String normalizeHostPath(String path) {
+    if (path == null || path.isEmpty()) return "";
+    try {
+      return new File(path).getCanonicalPath();
+    } catch (IOException e) {
+      return new File(path).getAbsolutePath();
+    }
   }
 
   public static String normalizePersistentDrives(Context context, String drives) {
@@ -171,9 +180,15 @@ public abstract class WineUtils {
 
     File gameDir = new File(gameInstallPath);
     if (!gameDir.exists()) return null;
+    File canonicalGameDir;
+    try {
+      canonicalGameDir = gameDir.getCanonicalFile();
+    } catch (IOException e) {
+      canonicalGameDir = gameDir.getAbsoluteFile();
+    }
 
     String safeSource = source == null || source.isEmpty() ? "Games" : source;
-    String gameName = gameDir.getName();
+    String gameName = canonicalGameDir.getName();
     if (gameName == null || gameName.isEmpty()) gameName = "Game";
     gameName = gameName.replace("/", "_").replace("\\", "_");
 
@@ -187,7 +202,7 @@ public abstract class WineUtils {
       try {
         if (isSymlink(link)) {
           String currentTarget = Files.readSymbolicLink(link.toPath()).toString();
-          if (!new File(currentTarget).getAbsolutePath().equals(gameDir.getAbsolutePath())) {
+          if (!normalizeHostPath(currentTarget).equals(canonicalGameDir.getPath())) {
             FileUtils.delete(link);
             needsCreation = true;
           }
@@ -203,7 +218,7 @@ public abstract class WineUtils {
       }
     }
 
-    if (needsCreation) FileUtils.symlink(gameDir.getAbsolutePath(), link.getAbsolutePath());
+    if (needsCreation) FileUtils.symlink(canonicalGameDir.getPath(), link.getAbsolutePath());
     return link;
   }
 
@@ -263,7 +278,7 @@ public abstract class WineUtils {
   }
 
   public static void createDosdevicesSymlinks(
-      Container container, @Nullable String gameDirectoryPath) {
+      Container container, @Nullable String gameDirectoryPath, boolean exposeSteamGameLink) {
     Log.d(
         "ContainerLaunch",
         "createDosdevicesSymlinks: rootDir="
@@ -330,9 +345,10 @@ public abstract class WineUtils {
     }
     Log.d("ContainerLaunch", "createDosdevicesSymlinks: created " + driveCount + " drive symlinks");
 
-    // Create Steam directory structure and symlinks if we have a game directory.
+    // Only expose Steam's steamapps/common symlink for actual Steam launches.
     if (gameDirectoryPath != null && !gameDirectoryPath.isEmpty()) {
-      ensureSteamappsCommonSymlink(container, gameDirectoryPath);
+      if (exposeSteamGameLink) ensureSteamappsCommonSymlink(container, gameDirectoryPath);
+      else removeSteamappsCommonSymlink(container, gameDirectoryPath);
     }
   }
 
@@ -350,7 +366,15 @@ public abstract class WineUtils {
   public static void ensureSteamappsCommonSymlink(Container container, String gameDirectoryPath) {
     if (gameDirectoryPath == null || gameDirectoryPath.isEmpty()) return;
 
-    String gameName = new File(gameDirectoryPath).getName();
+    File gameDirectory = new File(gameDirectoryPath);
+    File canonicalGameDirectory;
+    try {
+      canonicalGameDirectory = gameDirectory.getCanonicalFile();
+    } catch (IOException e) {
+      canonicalGameDirectory = gameDirectory.getAbsoluteFile();
+    }
+    String canonicalGameDirectoryPath = canonicalGameDirectory.getPath();
+    String gameName = canonicalGameDirectory.getName();
 
     // Create C:\Program Files (x86)\Steam\steamapps\common
     File steamCommonDir =
@@ -368,13 +392,13 @@ public abstract class WineUtils {
       // Check if the existing symlink points to the correct location
       try {
         String currentTarget = Files.readSymbolicLink(steamGameLink.toPath()).toString();
-        if (!currentTarget.equals(gameDirectoryPath)) {
+        if (!normalizeHostPath(currentTarget).equals(canonicalGameDirectoryPath)) {
           Log.d(
               "WineUtils",
               "Stale Steam symlink detected: "
                   + currentTarget
                   + " (expected "
-                  + gameDirectoryPath
+                  + canonicalGameDirectoryPath
                   + "), recreating");
           steamGameLink.delete();
           needsCreation = true;
@@ -394,15 +418,19 @@ public abstract class WineUtils {
     }
 
     if (needsCreation) {
-      FileUtils.symlink(gameDirectoryPath, steamGameLink.getAbsolutePath());
+      FileUtils.symlink(canonicalGameDirectoryPath, steamGameLink.getAbsolutePath());
       Log.d(
-          "WineUtils", "Created Steam game symlink: " + steamGameLink + " -> " + gameDirectoryPath);
+          "WineUtils",
+          "Created Steam game symlink: "
+              + steamGameLink
+              + " -> "
+              + canonicalGameDirectoryPath);
     }
 
     // Keep Steamworks Shared/_CommonRedist writable inside the Wine prefix.
     // Symlinking to the Android-backed game folder causes Steam's installscript.vdf
     // writes to fail with "disk write error" for shared redistributables.
-    File gameCommonRedist = new File(gameDirectoryPath, "_CommonRedist");
+    File gameCommonRedist = new File(canonicalGameDirectory, "_CommonRedist");
     File steamworksSharedDir = new File(steamCommonDir, "Steamworks Shared");
     if (!steamworksSharedDir.exists()) {
       steamworksSharedDir.mkdirs();
@@ -422,6 +450,39 @@ public abstract class WineUtils {
         new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/steamapps");
     if (!steamappsDir.exists()) {
       steamappsDir.mkdirs();
+    }
+  }
+
+  public static void removeSteamappsCommonSymlink(Container container, String gameDirectoryPath) {
+    if (container == null || gameDirectoryPath == null || gameDirectoryPath.isEmpty()) return;
+
+    File gameDirectory = new File(gameDirectoryPath);
+    File canonicalGameDirectory;
+    try {
+      canonicalGameDirectory = gameDirectory.getCanonicalFile();
+    } catch (IOException e) {
+      canonicalGameDirectory = gameDirectory.getAbsoluteFile();
+    }
+
+    File steamCommonDir =
+        new File(
+            container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/steamapps/common");
+    File steamGameLink = new File(steamCommonDir, canonicalGameDirectory.getName());
+    if (!steamGameLink.exists() && !isSymlink(steamGameLink)) return;
+
+    try {
+      if (isSymlink(steamGameLink)) {
+        FileUtils.delete(steamGameLink);
+        Log.d("WineUtils", "Removed Steam game symlink for non-Steam launch: " + steamGameLink);
+        return;
+      }
+    } catch (Exception ignored) {
+    }
+
+    String[] children = steamGameLink.list();
+    if (steamGameLink.isDirectory() && (children == null || children.length == 0)) {
+      FileUtils.delete(steamGameLink);
+      Log.d("WineUtils", "Removed empty Steam game directory for non-Steam launch: " + steamGameLink);
     }
   }
 

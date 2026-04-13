@@ -198,7 +198,7 @@ dependencies {
     implementation libs.commonsIo
     implementation libs.commonsLang3
     implementation libs.protobufJava
-    implementation libs.zstdJni
+    implementation("com.github.luben:zstd-jni:${libs.versions.zstdJni.get()}@aar")
     implementation libs.bouncyCastle
     implementation libs.flexbox
 

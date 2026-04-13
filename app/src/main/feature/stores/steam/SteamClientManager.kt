@@ -6,6 +6,7 @@ import android.util.Log
 import android.widget.Toast
 import com.winlator.cmod.runtime.container.ContainerManager
 import com.winlator.cmod.runtime.display.environment.ImageFs
+import com.winlator.cmod.runtime.wine.WineUtils
 import com.winlator.cmod.shared.android.AppUtils
 import com.winlator.cmod.shared.io.FileUtils
 import com.winlator.cmod.shared.io.TarCompressorUtils
@@ -368,7 +369,13 @@ object SteamClientManager {
         var batchFile: File? = null
         try {
             val normalizedPath = exePath.replace('/', '\\')
-            val windowsPath = "F:\\$normalizedPath"
+            val hostExeFile = File(exePath)
+            val windowsPath =
+                when {
+                    normalizedPath.matches(Regex("^[A-Za-z]:.*")) -> normalizedPath
+                    hostExeFile.isAbsolute -> WineUtils.getWindowsPath(null, hostExeFile.absolutePath)
+                    else -> "F:\\$normalizedPath"
+                }
 
             batchFile = File(rootDir, "tmp/steamless_wrapper.bat")
             batchFile.parentFile?.mkdirs()
@@ -377,11 +384,15 @@ object SteamClientManager {
             val command = "wine z:\\tmp\\steamless_wrapper.bat"
             Log.d(TAG, "Steamless output: ${shellRunner.exec(command)}")
 
-            val unixPath = exePath.replace('\\', '/')
             val wineprefix = File(rootDir, ImageFs.WINEPREFIX)
-            val exe = File(wineprefix, "dosdevices/f:/$unixPath")
-            val unpackedExe = File(wineprefix, "dosdevices/f:/$unixPath.unpacked.exe")
-            val originalExe = File(wineprefix, "dosdevices/f:/$unixPath.original.exe")
+            val mappedExe = WineUtils.getNativePath(ImageFs.find(context), windowsPath)
+            val exe =
+                mappedExe ?: run {
+                    val unixPath = exePath.replace('\\', '/')
+                    File(wineprefix, "dosdevices/f:/$unixPath")
+                }
+            val unpackedExe = File(exe.parentFile, exe.name + ".unpacked.exe")
+            val originalExe = File(exe.parentFile, exe.name + ".original.exe")
 
             if (exe.exists() && unpackedExe.exists()) {
                 if (!originalExe.exists()) {

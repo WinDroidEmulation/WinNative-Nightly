@@ -12,6 +12,7 @@ import com.winlator.cmod.feature.stores.steam.utils.FileUtils
 import com.winlator.cmod.feature.stores.steam.utils.PrefManager
 import com.winlator.cmod.runtime.container.Container
 import com.winlator.cmod.runtime.display.environment.ImageFs
+import com.winlator.cmod.runtime.wine.WineUtils
 import com.winlator.cmod.runtime.wine.WineRegistryEditor
 import `in`.dragonbra.javasteam.enums.EOSType
 import `in`.dragonbra.javasteam.enums.EPersonaState
@@ -608,22 +609,25 @@ object SteamUtils {
                 com.winlator.cmod.feature.stores.steam.utils.ContainerUtils
                     .getContainer(context, "STEAM_$steamAppId")
             val executablePath = container?.executablePath ?: ""
-            val drives = container?.drives ?: ""
-
-            // Find the drive letter for the game directory using proper drives iterator
-            var drive = 'F'
-            for (driveEntry in Container.drivesIterator(drives)) {
-                if (driveEntry[1] == appDirPath) {
-                    drive = driveEntry[0][0]
-                    break
-                }
+            val relativeExecutablePath = executablePath.ifEmpty { SteamService.getInstalledExe(steamAppId) }
+            if (relativeExecutablePath.isEmpty()) {
+                Timber.i("No executable path available for appId=$steamAppId, skipping unpacked executable restore")
+                return
             }
-            if (drive == 'F' && !drives.contains("F:")) {
-                Timber.w("Could not locate game drive for appDirPath=$appDirPath in drives, defaulting to F:")
-            }
-            val executableFile = "$drive:\\$executablePath"
 
-            val dosDevicePath = executableFile.replace("$drive:", "${drive.lowercaseChar()}:").replace('\\', '/')
+            val resolvedExeFile = File(appDirPath, relativeExecutablePath.replace("\\", "/"))
+            val windowsExecutablePath =
+                WineUtils.hostPathToRootWinePath(container, resolvedExeFile.absolutePath)
+            if (windowsExecutablePath.isEmpty()) {
+                Timber.w("Failed to map executable path for appId=$steamAppId at ${resolvedExeFile.absolutePath}")
+                return
+            }
+
+            val driveLetter = windowsExecutablePath[0].lowercaseChar()
+            val dosDevicePath =
+                windowsExecutablePath
+                    .replaceFirst("${windowsExecutablePath[0]}:", "$driveLetter:")
+                    .replace('\\', '/')
             val exe = File(imageFs.wineprefix + "/dosdevices/" + dosDevicePath)
             val unpackedExe = File(imageFs.wineprefix + "/dosdevices/" + dosDevicePath + ".unpacked.exe")
 

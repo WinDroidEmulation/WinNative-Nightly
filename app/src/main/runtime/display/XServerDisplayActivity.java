@@ -54,6 +54,7 @@ import androidx.core.view.GravityCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.winlator.cmod.feature.stores.steam.enums.Marker;
 import com.winlator.cmod.feature.stores.steam.utils.MarkerUtils;
+import com.winlator.cmod.feature.stores.steam.utils.PrefManager;
 import com.winlator.cmod.feature.stores.steam.utils.SteamUtils;
 
 import androidx.drawerlayout.widget.DrawerLayout;
@@ -172,6 +173,33 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private static final long STEAM_TERMINATION_POLL_MS = 1000L;
     private static final long STEAM_PROCESS_RESPONSE_TIMEOUT_MS = 2000L;
     private static final long STEAM_TERMINATION_TIMEOUT_MS = 30000L;
+    private static final String STEAM_REGISTRY_KEY = "Software\\Valve\\Steam";
+    private static final String STEAM_ROOT_PATH = "C:\\Program Files (x86)\\Steam";
+    private static final String STEAM_EXE_PATH = STEAM_ROOT_PATH + "\\steam.exe";
+    private static final String STEAM_USER_REGISTRY_BACKUP_FILE = "steam_registry_backup.reg";
+    private static final String STEAM_SYSTEM_REGISTRY_BACKUP_FILE = "steam_system_registry_backup.reg";
+    private static final String STEAM_CLIENT_STORE_RELATIVE_PATH = ".shared/steam-client-store";
+    private static final String PREVIOUS_STEAM_CLIENT_STORE_RELATIVE_PATH = ".steam-client-store";
+    private static final String PREVIOUS_CONTAINER_STEAM_CLIENT_STORE_RELATIVE_PATH = ".wine/.steam-client-store";
+    private static final String LEGACY_STEAM_CLIENT_STORE_RELATIVE_PATH = ".wine/drive_c/WinNative/SteamClient";
+    private static final String[] STEAM_SYSTEM_REGISTRY_KEYS = new String[] {
+            "Software\\Classes\\steam",
+            "Software\\Wow6432Node\\Valve\\Steam"
+    };
+    private static final String[] STEAM_REGISTRY_LINE_PATTERNS = new String[] {
+            "\"sourcemodinstallpath\"",
+            "\"steamexe\"",
+            "\"steampath\"",
+            "\"steamclientdll\"",
+            "\"steamclientdll64\"",
+            "winnative\\\\steamclient",
+            "winnative/steamclient",
+            ".shared\\\\steam-client-store",
+            ".shared/steam-client-store",
+            "steamclient_loader_x64.exe",
+            "steamclient_loader_x32.exe"
+    };
+    private static final String SHORTCUT_KEY_STEAM_GAME_ARCH = "steam_game_arch";
     private static final HashSet<String> STEAM_EXIT_ALLOWLIST = new HashSet<>(Arrays.asList(
             "wineserver",
             "services",
@@ -1419,7 +1447,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (shortcutInstallPath != null && !shortcutInstallPath.isEmpty()) {
                 File shortcutInstallDir = new File(shortcutInstallPath);
                 if (shortcutInstallDir.isDirectory()) {
-                    return shortcutInstallDir.getAbsolutePath();
+                    return getCanonicalPathOrAbsolute(shortcutInstallDir);
                 }
             }
         }
@@ -1430,12 +1458,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
         File serviceInstallDir = new File(serviceInstallPath);
         if (serviceInstallDir.isDirectory() && shortcut != null) {
             String shortcutInstallPath = shortcut.getExtra("game_install_path");
-            if (!serviceInstallDir.getAbsolutePath().equals(shortcutInstallPath)) {
-                shortcut.putExtra("game_install_path", serviceInstallDir.getAbsolutePath());
+            String canonicalInstallPath = getCanonicalPathOrAbsolute(serviceInstallDir);
+            if (!canonicalInstallPath.equals(shortcutInstallPath)) {
+                shortcut.putExtra("game_install_path", canonicalInstallPath);
                 shortcut.saveData();
             }
         }
-        return serviceInstallDir.getAbsolutePath();
+        return getCanonicalPathOrAbsolute(serviceInstallDir);
     }
 
     private boolean parseBoolean(String value) {
@@ -2043,8 +2072,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Restore Steam directory if it was hidden for a Custom Game
-        restoreSteamDir();
         // Schedule a deferred update check 10 s after game exit
         UpdateChecker.INSTANCE.schedulePostGameCheck(this);
         if (inputDeviceManager != null) {
@@ -2109,6 +2136,21 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (midiHandler != null && midiHandler.getSocket() != null && !midiHandler.getSocket().isClosed()) {
             Log.e(tag, "MidiHandler socket still open");
         }
+    }
+
+    private boolean isCustomShortcut() {
+        return shortcut != null
+                && "CUSTOM".equals(shortcut.getExtra("game_source", "CUSTOM"))
+                && !isSteamShortcut();
+    }
+
+    private boolean isRealSteamLaunchEnabledForShortcut() {
+        if (!isSteamShortcut()) {
+            return false;
+        }
+        return shortcut != null
+                ? parseBoolean(getShortcutSetting("launchRealSteam", container.isLaunchRealSteam() ? "1" : "0"))
+                : container != null && container.isLaunchRealSteam();
     }
 
     @Override
@@ -2422,17 +2464,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         // Ensure Steam client files are present (download + extract if needed) for Steam games
-        boolean isSteamGame = shortcut != null && "STEAM".equals(shortcut.getExtra("game_source"));
-        boolean isCustomGame = shortcut != null && "CUSTOM".equals(shortcut.getExtra("game_source", "CUSTOM")) && !isSteamGame;
-        boolean launchRealSteamSetup = shortcut != null
-                ? parseBoolean(getShortcutSetting("launchRealSteam", container.isLaunchRealSteam() ? "1" : "0"))
-                : container.isLaunchRealSteam();
+        boolean isSteamGame = isSteamShortcut();
+        boolean isCustomGame = isCustomShortcut();
+        boolean launchRealSteamSetup = isRealSteamLaunchEnabledForShortcut();
 
         // Restore Steam dir before Steam game setup; hide it for Custom Games
         if (isSteamGame || launchRealSteamSetup) {
-            restoreSteamDir();
+            setSteamClientVisibility(true);
         } else if (isCustomGame) {
-            hideSteamForCustomGame();
+            setSteamClientVisibility(false);
         }
 
         if (launchRealSteamSetup || isSteamGame) {
@@ -2667,6 +2707,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 iniFile.delete();
                 Log.d("XServerDisplayActivity", "Deleted lingering ColdClientLoader.ini for non-Steam game");
             }
+            prepareCustomGameSteamIsolation();
         }
 
         String desktopTheme = shortcut != null ? getShortcutSetting("desktopTheme", container.getDesktopTheme()) : container.getDesktopTheme();
@@ -2677,7 +2718,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         WineStartMenuCreator.create(this, container);
-        WineUtils.createDosdevicesSymlinks(container, getActiveGameDirectoryPath());
+        WineUtils.createDosdevicesSymlinks(container, getActiveGameDirectoryPath(), isSteamShortcut());
 
         int inputType = container.getInputType();
         if (shortcut != null) {
@@ -2753,9 +2794,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 guestProgramLauncherComponent.setWineInfo(this.wineInfo);
 
                 // P1: Wire steamType for box64rc preset selection (Normal/Light/Ultralight)
-                String steamType = shortcut != null
-                        ? getShortcutSetting("steamType", container.getSteamType())
-                        : container.getSteamType();
+                String steamType = isSteamShortcut()
+                        ? (shortcut != null ? getShortcutSetting("steamType", container.getSteamType()) : container.getSteamType())
+                        : Container.STEAM_TYPE_NORMAL;
                 guestProgramLauncherComponent.setSteamType(steamType);
                 GameFixes.applyForLaunch(container, shortcut);
 
@@ -4001,8 +4042,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     String gameInstPath = resolveSteamGameInstallPath(appId);
                     String gameExe = findGameExeWinPath(appId, new File(gameInstPath));
                     File gameExeFile = gameExe != null ? com.winlator.cmod.runtime.wine.WineUtils.getNativePath(imageFs, gameExe) : null;
-                    boolean use64BitLoader = gameExeFile == null || com.winlator.cmod.runtime.wine.PEHelper.is64Bit(gameExeFile);
-                    String loaderExe = use64BitLoader ? "steamclient_loader_x64.exe" : "steamclient_loader_x32.exe";
+                    String loaderExe = resolveSteamLoaderExecutable(gameExeFile);
                     args = "/dir \"C:\\Program Files (x86)\\Steam\" \"" + loaderExe + "\"";
                     Log.d("XServerDisplayActivity", "ColdClient launch via " + loaderExe + " for appId=" + appId);
                 } else {
@@ -4405,8 +4445,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         File nativeGameExe = com.winlator.cmod.runtime.wine.WineUtils.getNativePath(imageFs, gameExeWinPath);
         if (nativeGameExe != null && gameDir != null) {
-            String gameDirPath = gameDir.getAbsolutePath();
-            String nativePath = nativeGameExe.getAbsolutePath();
+            String gameDirPath = getCanonicalPathOrAbsolute(gameDir);
+            String nativePath = getCanonicalPathOrAbsolute(nativeGameExe);
             if (nativePath.equals(gameDirPath) || nativePath.startsWith(gameDirPath + File.separator)) {
                 String relativePath = nativePath.substring(gameDirPath.length());
                 if (relativePath.startsWith(File.separator)) relativePath = relativePath.substring(1);
@@ -4428,7 +4468,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private String findGameExeWinPath(int appId, File gameDir) {
         if (gameDir == null || !gameDir.exists()) return null;
 
-        String gameInstallPath = gameDir.getAbsolutePath();
+        String gameInstallPath = getCanonicalPathOrAbsolute(gameDir);
 
         if (appId > 0) {
             String launchExePath = shortcut != null ? shortcut.getExtra("launch_exe_path") : "";
@@ -4438,7 +4478,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (!resolvedRelativePath.isEmpty()) {
                 File configuredFile = new File(resolvedRelativePath);
                 if (configuredFile.isAbsolute()) {
-                    String configuredAbsolutePath = configuredFile.getAbsolutePath();
+                    String configuredAbsolutePath = getCanonicalPathOrAbsolute(configuredFile);
                     if (configuredAbsolutePath.equals(gameInstallPath) || configuredAbsolutePath.startsWith(gameInstallPath + File.separator)) {
                         resolvedRelativePath = configuredAbsolutePath.substring(gameInstallPath.length());
                         if (resolvedRelativePath.startsWith(File.separator)) {
@@ -4459,9 +4499,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     shortcut.putExtra("launch_exe_path", resolvedRelativePath);
                     shortcut.saveData();
                 }
-                File resolvedExeFile = new File(gameDir, resolvedRelativePath.replace("\\", "/"));
-                if (resolvedExeFile.isFile()) {
-                    return com.winlator.cmod.runtime.wine.WineUtils.hostPathToRootWinePath(container, resolvedExeFile.getAbsolutePath());
+                File resolvedExeFile = resolvePathCaseInsensitive(gameDir, resolvedRelativePath);
+                if (resolvedExeFile != null && resolvedExeFile.isFile()) {
+                    return com.winlator.cmod.runtime.wine.WineUtils.hostPathToRootWinePath(
+                            container, getCanonicalPathOrAbsolute(resolvedExeFile));
                 }
             }
         }
@@ -4482,6 +4523,60 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         return null;
+    }
+
+    private String getCanonicalPathOrAbsolute(File file) {
+        try {
+            return file.getCanonicalPath();
+        } catch (IOException e) {
+            return file.getAbsolutePath();
+        }
+    }
+
+    private File resolvePathCaseInsensitive(File baseDir, String relativePath) {
+        if (baseDir == null || relativePath == null || relativePath.isEmpty()) {
+            return null;
+        }
+
+        String normalizedPath = relativePath.replace('\\', '/');
+        File directFile = new File(baseDir, normalizedPath);
+        if (directFile.exists()) {
+            return directFile;
+        }
+
+        File currentDir = baseDir;
+        String[] segments = normalizedPath.split("/");
+        for (String segment : segments) {
+            if (segment == null || segment.isEmpty() || ".".equals(segment)) {
+                continue;
+            }
+            if ("..".equals(segment)) {
+                currentDir = currentDir.getParentFile();
+                if (currentDir == null) {
+                    return null;
+                }
+                continue;
+            }
+
+            File[] entries = currentDir.listFiles();
+            if (entries == null) {
+                return null;
+            }
+
+            File matched = null;
+            for (File entry : entries) {
+                if (entry.getName().equalsIgnoreCase(segment)) {
+                    matched = entry;
+                    break;
+                }
+            }
+            if (matched == null) {
+                return null;
+            }
+            currentDir = matched;
+        }
+
+        return currentDir;
     }
 
     /**
@@ -5105,46 +5200,520 @@ public class XServerDisplayActivity extends AppCompatActivity {
         generateSteamInterfacesFromDll(dir, dllToScan);
     }
     
-    /**
-     * Hides the Steam installation directory by renaming it so Custom Games
-     * with Goldberg patches don't detect and try to use the real Steam client.
-     */
-    private void hideSteamForCustomGame() {
+    private void setSteamClientVisibility(boolean visible) {
         if (container == null) return;
+        updateSteamDirectoryVisibility(visible);
+        updateSteamRegistryVisibility(visible);
+    }
+
+    private void updateSteamDirectoryVisibility(boolean visible) {
+        if (container == null) return;
+
+        File steamLink = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam");
+        File steamStore = getSharedSteamStore();
+        File previousSteamStore = new File(imageFs.getRootDir(), PREVIOUS_STEAM_CLIENT_STORE_RELATIVE_PATH);
+        File previousContainerSteamStore = new File(container.getRootDir(), PREVIOUS_CONTAINER_STEAM_CLIENT_STORE_RELATIVE_PATH);
+        File legacySteamStore = new File(container.getRootDir(), LEGACY_STEAM_CLIENT_STORE_RELATIVE_PATH);
+
         try {
-            File steamDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam");
-            File hiddenDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam.hidden");
-            if (steamDir.exists() && steamDir.isDirectory() && !hiddenDir.exists()) {
-                if (steamDir.renameTo(hiddenDir)) {
-                    Log.d("XServerDisplayActivity", "Hidden Steam directory for custom game launch");
-                } else {
-                    Log.w("XServerDisplayActivity", "Failed to hide Steam directory");
+            moveSteamDirectoryIntoBackingStore(steamLink, steamStore);
+            migrateLegacySteamStoreIfNeeded(previousSteamStore, steamStore);
+            migrateLegacySteamStoreIfNeeded(previousContainerSteamStore, steamStore);
+            migrateLegacySteamStoreIfNeeded(legacySteamStore, steamStore);
+
+            if (visible) {
+                if (!steamStore.exists()) {
+                    steamStore.mkdirs();
+                }
+                if (steamLink.exists() && !FileUtils.isSymlink(steamLink)) {
+                    FileUtils.delete(steamLink);
+                }
+                if (!FileUtils.isSymlink(steamLink) || !steamLink.exists()) {
+                    FileUtils.symlink(steamStore, steamLink);
+                    Log.d("XServerDisplayActivity", "Exposed Steam root via symlink: " + steamLink.getAbsolutePath());
+                }
+            } else {
+                if (steamLink.exists()) {
+                    FileUtils.delete(steamLink);
+                    Log.d("XServerDisplayActivity", "Removed visible Steam root for non-Steam launch");
                 }
             }
         } catch (Exception e) {
-            Log.e("XServerDisplayActivity", "Error hiding Steam directory", e);
+            Log.e("XServerDisplayActivity", "Error updating Steam directory visibility", e);
         }
     }
 
-    /**
-     * Restores the Steam installation directory after a Custom Game exits,
-     * or before launching a Steam game.
-     */
-    private void restoreSteamDir() {
+    private File getSharedSteamStore() {
+        if (imageFs != null) {
+            return new File(imageFs.getRootDir(), STEAM_CLIENT_STORE_RELATIVE_PATH);
+        }
+        return new File(getFilesDir(), "imagefs/" + STEAM_CLIENT_STORE_RELATIVE_PATH);
+    }
+
+    private void migrateLegacySteamStoreIfNeeded(File legacySteamStore, File steamStore) {
+        if (legacySteamStore == null || steamStore == null || !legacySteamStore.exists()) return;
+
+        File parentDir = steamStore.getParentFile();
+        if (parentDir != null && !parentDir.exists()) {
+            parentDir.mkdirs();
+        }
+
+        if (!steamStore.exists()) {
+            if (legacySteamStore.renameTo(steamStore)) {
+                Log.d("XServerDisplayActivity", "Migrated legacy Steam backing store to hidden location");
+                return;
+            }
+
+            if (!steamStore.mkdirs()) {
+                Log.w("XServerDisplayActivity", "Failed to create hidden Steam backing store during legacy migration");
+                return;
+            }
+        }
+
+        if (!steamStore.isDirectory()) {
+            Log.w("XServerDisplayActivity", "Hidden Steam backing store is not a directory");
+            return;
+        }
+
+        if (!FileUtils.copy(legacySteamStore, steamStore)) {
+            Log.w("XServerDisplayActivity", "Failed to copy legacy Steam backing store into hidden location");
+            return;
+        }
+
+        if (FileUtils.delete(legacySteamStore)) {
+            Log.d("XServerDisplayActivity", "Removed legacy Windows-visible Steam backing store");
+        } else {
+            Log.w("XServerDisplayActivity", "Failed to remove legacy Windows-visible Steam backing store");
+        }
+    }
+
+    private void moveSteamDirectoryIntoBackingStore(File steamLink, File steamStore) {
+        if (steamLink == null || steamStore == null) return;
+        if (!steamLink.exists() || FileUtils.isSymlink(steamLink)) return;
+
+        File parentDir = steamStore.getParentFile();
+        if (parentDir != null && !parentDir.exists()) {
+            parentDir.mkdirs();
+        }
+
+        if (!steamStore.exists()) {
+            if (steamLink.renameTo(steamStore)) {
+                Log.d("XServerDisplayActivity", "Migrated Steam directory to backing store: " + steamStore.getAbsolutePath());
+                return;
+            }
+            Log.w("XServerDisplayActivity", "Failed to rename Steam directory into backing store, falling back to copy");
+        }
+
+        if (!steamStore.exists() && !steamStore.mkdirs()) {
+            Log.w("XServerDisplayActivity", "Unable to create Steam backing store: " + steamStore.getAbsolutePath());
+            return;
+        }
+
+        if (!steamStore.isDirectory()) {
+            Log.w("XServerDisplayActivity", "Steam backing store is not a directory: " + steamStore.getAbsolutePath());
+            return;
+        }
+
+        if (!FileUtils.copy(steamLink, steamStore)) {
+            Log.w("XServerDisplayActivity", "Failed to copy Steam directory contents into backing store");
+            return;
+        }
+
+        if (FileUtils.delete(steamLink)) {
+            Log.d("XServerDisplayActivity", "Collapsed visible Steam directory into backing store");
+        } else {
+            Log.w("XServerDisplayActivity", "Failed to remove visible Steam directory after backing-store copy");
+        }
+    }
+
+    private void updateSteamRegistryVisibility(boolean visible) {
         if (container == null) return;
-        try {
-            File steamDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam");
-            File hiddenDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam.hidden");
-            if (hiddenDir.exists() && !steamDir.exists()) {
-                if (hiddenDir.renameTo(steamDir)) {
-                    Log.d("XServerDisplayActivity", "Restored Steam directory");
+        File userRegFile = new File(container.getRootDir(), ImageFs.WINEPREFIX + "/user.reg");
+        File systemRegFile = new File(container.getRootDir(), ImageFs.WINEPREFIX + "/system.reg");
+        File userBackupFile = new File(container.getRootDir(), ImageFs.WINEPREFIX + "/" + STEAM_USER_REGISTRY_BACKUP_FILE);
+        File systemBackupFile = new File(container.getRootDir(), ImageFs.WINEPREFIX + "/" + STEAM_SYSTEM_REGISTRY_BACKUP_FILE);
+        if (!visible) {
+            try {
+                forceHideSteamRegistry(userRegFile, userBackupFile, STEAM_REGISTRY_KEY);
+                forceHideSteamRegistry(systemRegFile, systemBackupFile, STEAM_SYSTEM_REGISTRY_KEYS);
+            } catch (Exception e) {
+                Log.e("XServerDisplayActivity", "Error updating Steam registry visibility", e);
+            }
+            return;
+        }
+
+        try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
+            if (visible) {
+                restoreRegistrySubtrees(userRegFile, userBackupFile, STEAM_REGISTRY_KEY);
+                restoreRegistrySubtrees(systemRegFile, systemBackupFile, STEAM_SYSTEM_REGISTRY_KEYS);
+                registryEditor.removeKey(STEAM_REGISTRY_KEY, true);
+                String backupContent = userBackupFile.isFile() ? FileUtils.readString(userBackupFile) : null;
+                if (backupContent != null && !backupContent.trim().isEmpty()) {
+                    if (registryEditor.appendRawContent(backupContent)) {
+                        Log.d("XServerDisplayActivity", "Restored Steam registry subtree from backup");
+                    } else {
+                        Log.w("XServerDisplayActivity", "Failed to restore Steam registry subtree from backup");
+                    }
                 } else {
-                    Log.w("XServerDisplayActivity", "Failed to restore Steam directory");
+                    registryEditor.setCreateKeyIfNotExist(true);
+                    registryEditor.setStringValue(STEAM_REGISTRY_KEY, "SteamExe", STEAM_EXE_PATH);
+                    registryEditor.setStringValue(STEAM_REGISTRY_KEY, "SteamPath", STEAM_ROOT_PATH);
+                    registryEditor.setStringValue(STEAM_REGISTRY_KEY, "InstallPath", STEAM_ROOT_PATH);
+
+                    String autoLoginUser = PrefManager.INSTANCE.getUsername();
+                    if (autoLoginUser != null && !autoLoginUser.isEmpty()) {
+                        registryEditor.setStringValue(STEAM_REGISTRY_KEY, "AutoLoginUser", autoLoginUser);
+                    } else {
+                        registryEditor.removeValue(STEAM_REGISTRY_KEY, "AutoLoginUser");
+                    }
+                    Log.d("XServerDisplayActivity", "Created default Steam registry subtree");
                 }
             }
         } catch (Exception e) {
-            Log.e("XServerDisplayActivity", "Error restoring Steam directory", e);
+            Log.e("XServerDisplayActivity", "Error updating Steam registry visibility", e);
         }
+    }
+
+    private void forceHideSteamRegistry(File registryFile, File backupFile, String... keys) {
+        String rawRegistry = FileUtils.readString(registryFile);
+        if (rawRegistry == null) rawRegistry = "";
+
+        String backupContent = extractRegistrySubtrees(rawRegistry, keys);
+        if (!backupContent.trim().isEmpty()) {
+            FileUtils.writeString(backupFile, backupContent.trim() + "\n");
+            Log.d("XServerDisplayActivity", "Backed up Steam registry subtrees from " + registryFile.getName());
+        }
+
+        String sanitizedRegistry = sanitizeSteamRegistryContent(rawRegistry, keys);
+        FileUtils.writeString(registryFile, sanitizedRegistry);
+        Log.d("XServerDisplayActivity", "Force-sanitized Steam registry state in " + registryFile.getName());
+    }
+
+    private String sanitizeSteamRegistryContent(String registryContent, String... keys) {
+        String sanitized = removeRegistrySubtrees(registryContent, keys);
+        return scrubRegistryLinePatterns(sanitized, STEAM_REGISTRY_LINE_PATTERNS);
+    }
+
+    private String scrubRegistryLinePatterns(String content, String... patterns) {
+        if (content == null || content.isEmpty() || patterns == null || patterns.length == 0) {
+            return content != null ? content : "";
+        }
+        String[] lines = content.split("\n", -1);
+        StringBuilder rebuilt = new StringBuilder();
+        for (String line : lines) {
+            boolean remove = false;
+            String normalizedLine = line.toLowerCase(Locale.ROOT);
+            for (String pattern : patterns) {
+                if (normalizedLine.contains(pattern)) {
+                    remove = true;
+                    break;
+                }
+            }
+            if (!remove) {
+                rebuilt.append(line).append('\n');
+            }
+        }
+        return rebuilt.toString();
+    }
+
+    private void hideRegistrySubtrees(File registryFile, File backupFile, String... keys) {
+        String rawRegistry = FileUtils.readString(registryFile);
+        if (rawRegistry == null) rawRegistry = "";
+
+        String backupContent = extractRegistrySubtrees(rawRegistry, keys);
+        if (!backupContent.trim().isEmpty()) {
+            FileUtils.writeString(backupFile, backupContent.trim() + "\n");
+            Log.d("XServerDisplayActivity", "Backed up Steam registry subtrees from " + registryFile.getName());
+        }
+
+        String strippedRegistry = removeRegistrySubtrees(rawRegistry, keys);
+        if (!strippedRegistry.equals(rawRegistry)) {
+            FileUtils.writeString(registryFile, strippedRegistry);
+            Log.d("XServerDisplayActivity", "Removed Steam registry subtrees from " + registryFile.getName());
+        } else {
+            Log.d("XServerDisplayActivity", "Steam registry subtrees already hidden in " + registryFile.getName());
+        }
+    }
+
+    private void restoreRegistrySubtrees(File registryFile, File backupFile, String... keys) {
+        String rawRegistry = FileUtils.readString(registryFile);
+        if (rawRegistry == null) rawRegistry = "";
+
+        String strippedRegistry = removeRegistrySubtrees(rawRegistry, keys);
+        if (!strippedRegistry.equals(rawRegistry)) {
+            FileUtils.writeString(registryFile, strippedRegistry);
+        }
+
+        if (!backupFile.isFile()) return;
+        String backupContent = FileUtils.readString(backupFile);
+        if (backupContent == null || backupContent.trim().isEmpty()) return;
+
+        String merged = FileUtils.readString(registryFile);
+        if (merged == null) merged = "";
+        if (!merged.endsWith("\n") && !merged.isEmpty()) merged += "\n";
+        merged += backupContent.trim() + "\n";
+        FileUtils.writeString(registryFile, merged);
+    }
+
+    private String extractRegistrySubtrees(String registryContent, String... keys) {
+        if (registryContent == null || registryContent.isEmpty() || keys == null || keys.length == 0) {
+            return "";
+        }
+
+        StringBuilder extracted = new StringBuilder();
+        for (String key : keys) {
+            String subtree = extractRegistrySubtree(registryContent, key);
+            if (subtree != null && !subtree.trim().isEmpty()) {
+                if (extracted.length() > 0 && extracted.charAt(extracted.length() - 1) != '\n') {
+                    extracted.append('\n');
+                }
+                extracted.append(subtree.trim()).append('\n');
+            }
+        }
+        return extracted.toString();
+    }
+
+    private String removeRegistrySubtrees(String registryContent, String... keys) {
+        String updated = registryContent != null ? registryContent : "";
+        if (keys == null) return updated;
+        for (String key : keys) {
+            updated = removeRegistrySubtree(updated, key);
+        }
+        return updated;
+    }
+
+    private String extractRegistrySubtree(String registryContent, String key) {
+        if (registryContent == null || registryContent.isEmpty() || key == null || key.isEmpty()) {
+            return "";
+        }
+
+        String escapedKey = key.replace("\\", "\\\\");
+        String prefix = "[" + escapedKey;
+        StringBuilder extracted = new StringBuilder();
+        boolean capturing = false;
+        String[] lines = registryContent.split("\n", -1);
+        for (String line : lines) {
+            if (line.startsWith("[")) {
+                if (capturing && !line.startsWith(prefix)) {
+                    break;
+                }
+                if (!capturing && line.startsWith(prefix)) {
+                    capturing = true;
+                }
+            }
+            if (capturing) {
+                extracted.append(line).append('\n');
+            }
+        }
+        return extracted.toString();
+    }
+
+    private String removeRegistrySubtree(String registryContent, String key) {
+        if (registryContent == null || registryContent.isEmpty() || key == null || key.isEmpty()) {
+            return registryContent != null ? registryContent : "";
+        }
+
+        String escapedKey = key.replace("\\", "\\\\");
+        String prefix = "[" + escapedKey;
+        StringBuilder rebuilt = new StringBuilder();
+        boolean capturing = false;
+        String[] lines = registryContent.split("\n", -1);
+        for (String line : lines) {
+            if (line.startsWith("[")) {
+                if (capturing && !line.startsWith(prefix)) {
+                    capturing = false;
+                }
+                if (!capturing && line.startsWith(prefix)) {
+                    capturing = true;
+                }
+            }
+            if (!capturing) {
+                rebuilt.append(line).append('\n');
+            }
+        }
+        return rebuilt.toString();
+    }
+
+    private String resolveSteamLoaderExecutable(@Nullable File gameExeFile) {
+        com.winlator.cmod.runtime.wine.PEHelper.Architecture architecture =
+                com.winlator.cmod.runtime.wine.PEHelper.detectArchitecture(gameExeFile);
+        if (architecture == com.winlator.cmod.runtime.wine.PEHelper.Architecture.X86) {
+            cacheSteamGameArchitecture("x86");
+            return "steamclient_loader_x32.exe";
+        }
+        if (architecture == com.winlator.cmod.runtime.wine.PEHelper.Architecture.X64) {
+            cacheSteamGameArchitecture("x64");
+            return "steamclient_loader_x64.exe";
+        }
+
+        String cachedArchitecture = shortcut != null ? shortcut.getExtra(SHORTCUT_KEY_STEAM_GAME_ARCH) : "";
+        if ("x86".equalsIgnoreCase(cachedArchitecture)) {
+            Log.d("XServerDisplayActivity", "Using cached x86 Steam loader selection");
+            return "steamclient_loader_x32.exe";
+        }
+        if ("x64".equalsIgnoreCase(cachedArchitecture)) {
+            Log.d("XServerDisplayActivity", "Using cached x64 Steam loader selection");
+            return "steamclient_loader_x64.exe";
+        }
+
+        String configuredPath = shortcut != null && shortcut.path != null
+                ? shortcut.path.toLowerCase(Locale.ROOT)
+                : "";
+        if (configuredPath.endsWith("steamclient_loader_x32.exe")) {
+            Log.w("XServerDisplayActivity", "Falling back to shortcut-configured x32 Steam loader");
+            return "steamclient_loader_x32.exe";
+        }
+        if (configuredPath.endsWith("steamclient_loader_x64.exe")) {
+            Log.w("XServerDisplayActivity", "Falling back to shortcut-configured x64 Steam loader");
+            return "steamclient_loader_x64.exe";
+        }
+
+        Log.w("XServerDisplayActivity", "Unable to detect Steam game architecture for loader selection, defaulting to x64");
+        return "steamclient_loader_x64.exe";
+    }
+
+    private void prepareCustomGameSteamIsolation() {
+        if (!isCustomShortcut() || shortcut == null || container == null) return;
+
+        File launchExe = resolveCustomLaunchExecutableFile();
+        if (launchExe == null || !launchExe.isFile()) return;
+
+        File launchDir = launchExe.getParentFile();
+        if (launchDir == null || !launchDir.isDirectory()) return;
+        File gameRoot = resolveCustomGameRoot(launchDir);
+
+        cleanupEmbeddedSteamRuntime(launchDir);
+        if (!launchDir.equals(gameRoot)) {
+            cleanupEmbeddedSteamRuntime(gameRoot);
+        }
+
+        int customSteamAppId = resolveCustomGameSteamAppId(launchExe);
+        if (customSteamAppId <= 0) {
+            Log.d("XServerDisplayActivity", "No custom Steam app ID discovered for " + launchExe.getName());
+            return;
+        }
+
+        String language = container.getExtra("containerLanguage", "english");
+        if (language == null || language.isEmpty()) language = "english";
+
+        try {
+            SteamUtils.writeCompleteSettingsDir(launchDir, customSteamAppId, language, false, false, false, null);
+            setupSteamSettingsForAllDirs(gameRoot, customSteamAppId, language, false, false, false, null);
+            Log.d("XServerDisplayActivity", "Prepared local Steamworks metadata for custom game appId=" + customSteamAppId
+                    + " exe=" + launchExe.getAbsolutePath());
+        } catch (Exception e) {
+            Log.w("XServerDisplayActivity", "Failed to prepare local Steamworks metadata for custom game", e);
+        }
+    }
+
+    @Nullable
+    private File resolveCustomLaunchExecutableFile() {
+        if (shortcut == null || shortcut.path == null || shortcut.path.isEmpty()) {
+            return null;
+        }
+
+        String safePath = shortcut.path;
+        if (safePath.matches("^[A-Z]:[^\\\\/].*")) {
+            safePath = safePath.substring(0, 2) + "\\" + safePath.substring(2);
+        }
+
+        File nativePath = WineUtils.getNativePath(imageFs, safePath);
+        return nativePath != null && nativePath.isFile() ? nativePath : null;
+    }
+
+    @NonNull
+    private File resolveCustomGameRoot(@NonNull File fallbackLaunchDir) {
+        String activeGameDirectoryPath = getActiveGameDirectoryPath();
+        if (activeGameDirectoryPath != null && !activeGameDirectoryPath.isEmpty()) {
+            File activeGameDir = new File(activeGameDirectoryPath);
+            if (activeGameDir.isDirectory()) {
+                return activeGameDir;
+            }
+        }
+        return fallbackLaunchDir;
+    }
+
+    private int resolveCustomGameSteamAppId(@NonNull File launchExe) {
+        Integer discovered = tryReadSteamAppId(new File(launchExe.getParentFile(), "steam_appid.txt"));
+        if (discovered != null) return discovered;
+
+        discovered = tryReadSteamAppId(new File(new File(launchExe.getParentFile(), "steam_settings"), "steam_appid.txt"));
+        if (discovered != null) return discovered;
+
+        File onlineFixIni = findClosestOnlineFixIni(launchExe.getParentFile());
+        if (onlineFixIni != null) {
+            discovered = parseOnlineFixAppId(onlineFixIni);
+            if (discovered != null) return discovered;
+        }
+
+        return 0;
+    }
+
+    @Nullable
+    private Integer tryReadSteamAppId(File appIdFile) {
+        if (appIdFile == null || !appIdFile.isFile()) return null;
+        try (BufferedReader reader = new BufferedReader(new FileReader(appIdFile))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+                    continue;
+                }
+                return Integer.parseInt(trimmed);
+            }
+        } catch (Exception e) {
+            Log.w("XServerDisplayActivity", "Failed to read steam_appid.txt from " + appIdFile.getAbsolutePath(), e);
+        }
+        return null;
+    }
+
+    @Nullable
+    private File findClosestOnlineFixIni(@Nullable File startDir) {
+        File current = startDir;
+        while (current != null) {
+            File candidate = new File(current, "OnlineFix.ini");
+            if (candidate.isFile()) {
+                return candidate;
+            }
+            current = current.getParentFile();
+        }
+        return null;
+    }
+
+    @Nullable
+    private Integer parseOnlineFixAppId(@NonNull File onlineFixIni) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(onlineFixIni))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith(";") || trimmed.startsWith("[")) {
+                    continue;
+                }
+
+                int separatorIndex = trimmed.indexOf('=');
+                if (separatorIndex <= 0) continue;
+
+                String key = trimmed.substring(0, separatorIndex).trim();
+                String value = trimmed.substring(separatorIndex + 1).trim();
+                if (!"FakeAppId".equalsIgnoreCase(key) && !"RealAppId".equalsIgnoreCase(key)) {
+                    continue;
+                }
+                if (value.isEmpty()) continue;
+
+                return Integer.parseInt(value);
+            }
+        } catch (Exception e) {
+            Log.w("XServerDisplayActivity", "Failed to parse OnlineFix.ini app ID from " + onlineFixIni.getAbsolutePath(), e);
+        }
+        return null;
+    }
+
+    private void cacheSteamGameArchitecture(String architecture) {
+        if (shortcut == null || architecture == null || architecture.isEmpty()) return;
+        String currentValue = shortcut.getExtra(SHORTCUT_KEY_STEAM_GAME_ARCH);
+        if (architecture.equalsIgnoreCase(currentValue)) return;
+        shortcut.putExtra(SHORTCUT_KEY_STEAM_GAME_ARCH, architecture.toLowerCase(Locale.ROOT));
+        shortcut.saveData();
     }
 
     /**
