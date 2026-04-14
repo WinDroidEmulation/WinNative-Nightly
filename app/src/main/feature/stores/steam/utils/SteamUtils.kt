@@ -41,46 +41,6 @@ import java.nio.file.StandardOpenOption
 import java.util.concurrent.TimeUnit
 
 object SteamUtils {
-    /**
-     * Writes the ColdClientLoader.ini file for the Goldberg emulator.
-     */
-    @JvmStatic
-    fun writeColdClientIni(
-        steamAppId: Int,
-        container: Container,
-    ) {
-        val gameName = getAppDirName(getAppInfoOf(steamAppId))
-        val executablePath = container.executablePath.replace("/", "\\")
-        val exePath = "steamapps\\common\\$gameName\\$executablePath"
-        val exeRunDir = "steamapps\\common\\$gameName"
-        val exeCommandLine = container.execArgs
-        val iniFile = File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/ColdClientLoader.ini")
-        iniFile.parentFile?.mkdirs()
-
-        val injectionSection = """
-                [Injection]
-                IgnoreLoaderArchDifference=1
-                DllsToInjectFolder=extra_dlls
-            """
-
-        iniFile.writeText(
-            """
-            [SteamClient]
-
-            Exe=$exePath
-            ExeRunDir=$exeRunDir
-            ExeCommandLine=$exeCommandLine
-            AppId=$steamAppId
-
-            # path to the steamclient dlls, both must be set, absolute paths or relative to the loader directory
-            SteamClientDll=steamclient.dll
-            SteamClient64Dll=steamclient64.dll
-
-            $injectionSection
-            """.trimIndent(),
-        )
-    }
-
     private fun coreSteamClientFiles(): Array<String> =
         arrayOf(
             "GameOverlayRenderer.dll",

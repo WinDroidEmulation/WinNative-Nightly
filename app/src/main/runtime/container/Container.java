@@ -73,7 +73,7 @@ public class Container {
     private boolean useColdClient = true;
     private String steamType = DefaultVersion.STEAM_TYPE;
     private boolean allowSteamUpdates;
-    private boolean needsUnpacking = false;
+    private boolean needsUnpacking = true;
     private boolean forceDlc = false;
     private boolean steamOfflineMode = false;
     private boolean unpackFiles = false;
