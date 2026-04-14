@@ -178,8 +178,14 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     File rootDir = imageFs.getRootDir();
     StringBuilder output = new StringBuilder();
 
-    // Use the instance envVars if available, otherwise new
-    EnvVars envVars = (this.envVars != null) ? new EnvVars(this.envVars.toString()) : new EnvVars();
+    // Clone the instance envVars by copying the map directly. Using
+    // new EnvVars(this.envVars.toString()) would fail because toString() joins
+    // with spaces and putAll(String) splits on spaces, destroying values that
+    // contain spaces (e.g., driver paths like "Turnip MTR v3.2.2-p Axxx/").
+    EnvVars envVars = new EnvVars();
+    if (this.envVars != null) {
+      envVars.putAll(this.envVars);
+    }
 
     envVars.put("HOME", imageFs.home_path);
     envVars.put("USER", ImageFs.USER);
@@ -206,6 +212,11 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         "ANDROID_SYSVSHM_SERVER",
         imageFs.getRootDir().getPath() + UnixSocketConfig.SYSVSHM_SERVER_PATH);
     envVars.put("FONTCONFIG_PATH", imageFs.getRootDir().getPath() + "/usr/etc/fonts");
+    // Match GameNative's BionicProgramLauncherComponent env vars for shell commands
+    envVars.put("WINE_NO_DUPLICATE_EXPLORER", "1");
+    envVars.put("PREFIX", imageFs.getRootDir().getPath() + "/usr");
+    envVars.put("WINE_DISABLE_FULLSCREEN_HACK", "1");
+    envVars.put("SteamGameId", "0");
 
     File libDir = imageFs.getLibDir();
     File sysvshm64 = ensureImageFsNativeLibrary(context, imageFs, "libandroid-sysvshm.so");
@@ -229,12 +240,27 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     envVars.put("WINEESYNC_WINLATOR", "1");
     mergeExternalEnvVars(envVars, envVars.get("LD_PRELOAD"), envVars.get("FAKE_EVDEV_DIR"));
 
-    // box64 may be at /usr/bin or /usr/local/bin depending on installation
-    String box64Path = rootDir.getPath() + "/usr/bin/box64";
-    if (!new File(box64Path).exists()) {
-      box64Path = rootDir.getPath() + "/usr/local/bin/box64";
+    // For arm64ec Wine builds the wine binary is native ARM64 — call it directly
+    // with a fully-qualified path (matching GameNative's BionicProgramLauncherComponent).
+    // Wrapping with box64 causes it to fail ELF header detection and adds overhead.
+    // For non-arm64ec, box64 translates the x86_64 Wine binary.
+    String finalCommand;
+    if (wineInfo != null && wineInfo.isArm64EC()) {
+      // Resolve bare "wine" or "wineserver" to full path under the Wine bin directory
+      if (command.startsWith("wine ") || command.equals("wine")) {
+        finalCommand = winePath + "/wine" + command.substring(4);
+      } else if (command.startsWith("wineserver ") || command.equals("wineserver")) {
+        finalCommand = winePath + "/wineserver" + command.substring(10);
+      } else {
+        finalCommand = command;
+      }
+    } else {
+      String box64Path = rootDir.getPath() + "/usr/bin/box64";
+      if (!new File(box64Path).exists()) {
+        box64Path = rootDir.getPath() + "/usr/local/bin/box64";
+      }
+      finalCommand = box64Path + " " + command;
     }
-    String finalCommand = box64Path + " " + command;
     try {
       Log.d("GuestProgramLauncherComponent", "Shell command is " + finalCommand);
       java.lang.Process process =

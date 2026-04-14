@@ -364,7 +364,15 @@ object SteamClientManager {
     ): Boolean {
         val rootDir = ImageFs.find(context).rootDir
         val steamlessCli = File(rootDir, "Steamless/Steamless.CLI.exe")
-        if (!steamlessCli.exists()) return false
+        val pluginsDir = File(rootDir, "Steamless/Plugins")
+        if (!steamlessCli.exists()) {
+            Log.e(TAG, "Steamless CLI not found at ${steamlessCli.path}")
+            return false
+        }
+        if (!pluginsDir.exists() || pluginsDir.list().isNullOrEmpty()) {
+            Log.e(TAG, "Steamless Plugins/ directory is missing or empty — cannot unpack")
+            return false
+        }
 
         var batchFile: File? = null
         try {
@@ -379,28 +387,50 @@ object SteamClientManager {
 
             batchFile = File(rootDir, "tmp/steamless_wrapper.bat")
             batchFile.parentFile?.mkdirs()
-            FileUtils.writeString(batchFile, "@echo off\r\nz:\\Steamless\\Steamless.CLI.exe \"$windowsPath\"\r\n")
+            val batchContent = "@echo off\r\n" +
+                "z:\\Steamless\\Steamless.CLI.exe \"$windowsPath\"\r\n" +
+                "echo STEAMLESS_EXIT_CODE=%ERRORLEVEL%\r\n"
+            FileUtils.writeString(batchFile, batchContent)
 
             val command = "wine z:\\tmp\\steamless_wrapper.bat"
-            Log.d(TAG, "Steamless output: ${shellRunner.exec(command)}")
+            val output = shellRunner.exec(command)
+            Log.d(TAG, "Steamless CLI output: $output")
 
-            val wineprefix = File(rootDir, ImageFs.WINEPREFIX)
+            // Validate CLI reported success before swapping files
+            val steamlessSuccess = output.lowercase().contains("successfully unpacked")
+
+            val unixPath = exePath.replace('\\', '/')
             val mappedExe = WineUtils.getNativePath(ImageFs.find(context), windowsPath)
-            val exe =
-                mappedExe ?: run {
-                    val unixPath = exePath.replace('\\', '/')
-                    File(wineprefix, "dosdevices/f:/$unixPath")
+            val hostExe =
+                when {
+                    mappedExe != null -> mappedExe
+                    File(unixPath).isAbsolute -> File(unixPath)
+                    else -> {
+                        Log.e(TAG, "Steamless exe path could not be resolved to a host file: exePath=$exePath windowsPath=$windowsPath")
+                        return false
+                    }
                 }
-            val unpackedExe = File(exe.parentFile, exe.name + ".unpacked.exe")
-            val originalExe = File(exe.parentFile, exe.name + ".original.exe")
+            val unpackedExe = File(hostExe.parentFile, hostExe.name + ".unpacked.exe")
+            val originalExe = File(hostExe.parentFile, hostExe.name + ".original.exe")
 
-            if (exe.exists() && unpackedExe.exists()) {
+            if (steamlessSuccess && hostExe.exists() && unpackedExe.exists()) {
                 if (!originalExe.exists()) {
-                    Files.copy(exe.toPath(), originalExe.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    Files.copy(hostExe.toPath(), originalExe.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    Log.d(TAG, "Backed up original exe as ${originalExe.name}")
                 }
-                Files.copy(unpackedExe.toPath(), exe.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                Files.copy(unpackedExe.toPath(), hostExe.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                Log.d(TAG, "Swapped exe with unpacked version")
+                return true
+            } else if (!steamlessSuccess && unpackedExe.exists()) {
+                // Existing .unpacked.exe from prior run — use it even if CLI failed this time
+                if (!originalExe.exists() && hostExe.exists()) {
+                    Files.copy(hostExe.toPath(), originalExe.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
+                Files.copy(unpackedExe.toPath(), hostExe.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                Log.d(TAG, "Used existing .unpacked.exe from prior run")
                 return true
             }
+            Log.w(TAG, "Steamless did not produce .unpacked.exe (success=$steamlessSuccess)")
             return false
         } catch (e: Exception) {
             Log.e(TAG, "Error running Steamless", e)

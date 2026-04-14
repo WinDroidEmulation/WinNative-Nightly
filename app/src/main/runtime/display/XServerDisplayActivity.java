@@ -199,7 +199,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             "steamclient_loader_x64.exe",
             "steamclient_loader_x32.exe"
     };
-    private static final String SHORTCUT_KEY_STEAM_GAME_ARCH = "steam_game_arch";
+
     private static final HashSet<String> STEAM_EXIT_ALLOWLIST = new HashSet<>(Arrays.asList(
             "wineserver",
             "services",
@@ -2582,57 +2582,76 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
                             Log.d("XServerDisplayActivity", "Real Steam Setup: Pristine environment restored for appId=" + appId);
                         } else if (useColdClient) {
-                            // ── ColdClient launcher mode ──────────
+                            // ── ColdClient launcher mode (matches GameNative replaceSteamclientDll) ──────
                             // ColdClientLoader handles Steam emulation by loading Goldberg's
                             // steamclient.dll/steamclient64.dll. The game's ORIGINAL steam_api.dll
                             // must stay intact — ColdClientLoader routes its calls through the
-                            // emulated steamclient. Do NOT replace steam_api.dll here (that's
-                            // only for Goldberg mode which launches the game directly).
-                            //
-                            // Stage 1 (Steamless exe stripping) still runs in preUnpack after Wine is ready.
+                            // emulated steamclient.
 
-                            // Restore original DLLs if previously replaced by Goldberg mode
-                            if (MarkerUtils.INSTANCE.hasMarker(gameInstallPath, Marker.STEAM_DLL_REPLACED)) {
-                                restoreSteamApiDlls(gameDir);
-                                MarkerUtils.INSTANCE.removeMarker(gameInstallPath, Marker.STEAM_DLL_REPLACED);
-                                MarkerUtils.INSTANCE.removeMarker(gameInstallPath, Marker.STEAM_DRM_PATCHED);
-                                Log.d("XServerDisplayActivity", "Restored original steam_api DLLs for ColdClient mode");
-                            } else {
-                                // Pre-marker fallback: DLLs were replaced before the marker system
-                                // existed. Detect by checking for .orig backups and restore them.
-                                restoreSteamApiDlls(gameDir);
-                            }
+                            // Remove conflicting Goldberg markers/state
+                            MarkerUtils.INSTANCE.removeMarker(gameInstallPath, Marker.STEAM_DLL_REPLACED);
+                            MarkerUtils.INSTANCE.removeMarker(gameInstallPath, Marker.STEAM_DLL_RESTORED);
 
-                            // When Legacy DRM toggle is off, restore the original exe so the runtime
-                            // patcher can work on the real SteamStub instead of a Steamless leftover.
-                            if (!unpackFiles) {
-                                SteamUtils.restoreOriginalExecutable(this, appId);
-                            }
+                            // Restore original steam_api DLLs if previously replaced by Goldberg mode
+                            SteamUtils.putBackSteamDlls(gameInstallPath);
 
-                            // Backup steamclient DLLs before any modification
+                            // Backup steamclient DLLs before any modification (for restore on mode switch)
                             SteamUtils.backupSteamclientFiles(this, appId);
 
-                            // ColdClient launcher setup (writes steam_settings in Steam dir + ColdClientLoader.ini)
+                            // Delete extra_dlls folder before extraction to prevent conflicts (GameNative parity)
+                            File extraDllDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/extra_dlls");
+                            if (extraDllDir.exists()) {
+                                com.winlator.cmod.shared.io.FileUtils.delete(extraDllDir);
+                                Log.d("XServerDisplayActivity", "Deleted extra_dlls directory before extraction");
+                            }
+
+                            // Extract ColdClientLoader + Goldberg steamclient stubs into the Wine prefix.
+                            // The archive extracts into imageFs.rootDir at home/xuser/.wine/... which resolves
+                            // through the container activation symlink to the correct container prefix.
+                            // Do NOT break the Steam symlink — GameNative keeps it intact and uses
+                            // backup/restore for mode switching instead.
+                            try {
+                                File expFile = new File(getFilesDir(), "experimental-drm.tzst");
+                                if (expFile.exists()) {
+                                    com.winlator.cmod.shared.io.TarCompressorUtils.extract(
+                                            com.winlator.cmod.shared.io.TarCompressorUtils.Type.ZSTD,
+                                            expFile, imageFs.getRootDir(), null);
+                                    Log.d("XServerDisplayActivity", "Extracted experimental-drm.tzst for ColdClient mode");
+                                } else {
+                                    Log.w("XServerDisplayActivity", "experimental-drm.tzst not found! ColdClient mode may fail.");
+                                }
+                            } catch (Exception e) {
+                                Log.e("XServerDisplayActivity", "Failed to extract experimental-drm.tzst", e);
+                            }
+
+                            // Restore original steam_api DLLs in game dir (ColdClient hooks through steamclient, not steam_api)
+                            SteamUtils.putBackSteamDlls(gameInstallPath);
+                            // Restore unpacked exe if available
+                            SteamUtils.restoreUnpackedExecutable(this, appId);
+
+                            // Write steam_settings in Steam dir + next to game's steam_api DLLs
                             File steamDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam");
                             steamDir.mkdirs();
                             SteamUtils.writeCompleteSettingsDir(steamDir, appId, language, isOfflineMode, forceDlc, useSteamInput, ticketBase64);
                             SteamUtils.enrichSteamSettings(this, appId, new File(steamDir, "steam_settings"));
-
-                            // Write steam_settings next to the game's steam_api DLLs too
                             setupSteamSettingsForAllDirs(gameDir, appId, language, isOfflineMode, forceDlc, useSteamInput, ticketBase64);
-                            SteamUtils.enrichSteamSettings(this, appId,
-                                    new File(gameInstallPath, "steam_settings"));
 
                             // Generate steam_interfaces.txt from the original DLLs
                             generateSteamInterfacesForGame(gameDir);
 
-                            // Write ColdClientLoader.ini with game exe path
-                            String gameExeWinPath = findGameExeWinPath(appId, gameDir);
-                            if (gameExeWinPath != null) {
-                                writeColdClientIniForLaunch(appId, gameInstallPath, gameExeWinPath);
-                                Log.d("XServerDisplayActivity", "ColdClient launcher configured for appId=" + appId);
+                            // Ensure steamapps/common symlink exists — ColdClientLoader's ExeRunDir depends on it
+                            File steamappsDir = new File(steamDir, "steamapps");
+                            new File(steamappsDir, "common").mkdirs();
+                            WineUtils.ensureSteamappsCommonSymlink(container, gameInstallPath);
+
+                            // Write ColdClientLoader.ini using robust relative exe resolution
+                            String relativeExeForIni = resolveRelativeGameExe(appId, gameInstallPath);
+                            if (!relativeExeForIni.isEmpty()) {
+                                String gameDirNameForIni = new File(gameInstallPath).getName();
+                                writeColdClientIniDirect(appId, gameDirNameForIni, relativeExeForIni, unpackFiles);
+                                Log.d("XServerDisplayActivity", "ColdClient INI: exe=" + relativeExeForIni);
                             } else {
-                                Log.w("XServerDisplayActivity", "Could not find game exe for ColdClient, appId=" + appId);
+                                Log.w("XServerDisplayActivity", "Could not find game exe for ColdClient INI, appId=" + appId);
                             }
 
                             MarkerUtils.INSTANCE.addMarker(gameInstallPath, Marker.STEAM_COLDCLIENT_USED);
@@ -2671,14 +2690,26 @@ public class XServerDisplayActivity extends AppCompatActivity {
                                 MarkerUtils.INSTANCE.addMarker(gameInstallPath, Marker.STEAM_DLL_REPLACED);
                                 Log.d("XServerDisplayActivity", "Goldberg Steam setup complete for appId=" + appId);
                             } else {
-                                // DLLs already replaced; still refresh steam_settings in case ticket changed
-                                setupSteamSettingsForAllDirs(gameDir, appId, language, isOfflineMode, forceDlc, useSteamInput, ticketBase64);
+                                // DLLs already replaced; verify they actually exist.
+                                // If a game never had steam_api DLLs (e.g. Monster Hunter Stories),
+                                // the marker was set but no DLLs were ever placed. Re-run injection.
+                                boolean hasSteamApiDll = hasSteamApiDllInTree(gameDir);
+                                if (!hasSteamApiDll) {
+                                    Log.w("XServerDisplayActivity",
+                                            "STEAM_DLL_REPLACED marker set but no steam_api DLL found — clearing marker and re-injecting");
+                                    MarkerUtils.INSTANCE.removeMarker(gameInstallPath, Marker.STEAM_DLL_REPLACED);
+                                    replaceSteamApiDlls(gameDir, gameInstallPath, language, isOfflineMode, forceDlc, useSteamInput, ticketBase64);
+                                    MarkerUtils.INSTANCE.addMarker(gameInstallPath, Marker.STEAM_DLL_REPLACED);
+                                } else {
+                                    // DLLs genuinely exist; just refresh steam_settings in case ticket changed
+                                    setupSteamSettingsForAllDirs(gameDir, appId, language, isOfflineMode, forceDlc, useSteamInput, ticketBase64);
+                                }
                                 // FIX #8: Refresh achievements/save locations too
                                 SteamUtils.enrichSteamSettings(this, appId,
                                         new File(gameInstallPath, "steam_settings"));
                                 // Ensure experimental steamclient stubs exist (may be missing from older installs)
                                 copySteamclientStubs(gameDir);
-                                Log.d("XServerDisplayActivity", "Goldberg: DLLs already replaced, refreshed steam_settings for appId=" + appId);
+                                Log.d("XServerDisplayActivity", "Goldberg: refreshed steam_settings for appId=" + appId);
                             }
                         }
 
@@ -2688,11 +2719,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
                         // Sync achievements from Goldberg back to Steam (best-effort)
                         SteamUtils.syncGoldbergAchievementsAndStats(this, appId);
 
-                        if (launchRealSteamSetup) {
-                            cleanupEmbeddedSteamRuntime(gameDir);
-                        } else {
-                            copySteamRuntimeIntoGameDir(gameDir);
-                        }
+                        // GameNative parity: do not clone the full Steam runtime into the game
+                        // directory for Steam titles. A copied GameDir/Steam tree can override
+                        // the intended global Steam root or per-game Goldberg stubs and break
+                        // repeated launches, especially on titles with custom Steam loaders.
+                        cleanupEmbeddedSteamRuntime(gameDir);
 
                         Log.d("XServerDisplayActivity", "Steam environment physical readiness verified for appId=" + appId);
                     }
@@ -2830,7 +2861,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     "' effective='" + effectiveCustomEnvVars + "'");
             envVars.putAll(effectiveCustomEnvVars);
 
-            if (!envVars.has("WINEESYNC")) {
+            // Normalize synchronization environment variables (NTSync / ESync / FSync).
+            normalizeSyncEnvVars(envVars);
+
+            if (!envVars.has("WINEESYNC") && !envVars.has("WINENTSYNC")
+                    && !envVars.has("PROTON_USE_NTSYNC")) {
                 envVars.put("WINEESYNC", "1");
             }
 
@@ -2867,24 +2902,27 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 // Always wired for Steam games so per-container prerequisites install correctly.
                 boolean isSteamGameForUnpack = shortcut != null && "STEAM".equals(shortcut.getExtra("game_source"));
                 if (isSteamGameForUnpack) {
-                    final boolean needsUnpacking = container.isNeedsUnpacking();
-                    final boolean unpackFiles = shortcut != null
-                            ? parseBoolean(getShortcutSetting("unpackFiles", container.isUnpackFiles() ? "1" : "0"))
-                            : container.isUnpackFiles();
-                    final boolean launchRealSteamForSetup = shortcut != null
-                            ? parseBoolean(getShortcutSetting("launchRealSteam", container.isLaunchRealSteam() ? "1" : "0"))
-                            : container.isLaunchRealSteam();
-                    if (launchRealSteamForSetup) {
-                        guestProgramLauncherComponent.setPreUnpack(null);
-                    } else {
-                        guestProgramLauncherComponent.setPreUnpack(() -> {
-                            try {
-                                runPreGameSetup(guestProgramLauncherComponent, needsUnpacking, unpackFiles, false);
-                            } catch (Exception e) {
-                                Log.e("XServerDisplayActivity", "preUnpack failed", e);
+                    guestProgramLauncherComponent.setPreUnpack(() -> {
+                        try {
+                            boolean currentLaunchRealSteam = shortcut != null
+                                    ? parseBoolean(getShortcutSetting("launchRealSteam", container.isLaunchRealSteam() ? "1" : "0"))
+                                    : container.isLaunchRealSteam();
+                            if (currentLaunchRealSteam) {
+                                return;
                             }
-                        });
-                    }
+
+                            boolean currentUnpackFiles = shortcut != null
+                                    ? parseBoolean(getShortcutSetting("unpackFiles", container.isUnpackFiles() ? "1" : "0"))
+                                    : container.isUnpackFiles();
+                            runPreGameSetup(
+                                    guestProgramLauncherComponent,
+                                    container.isNeedsUnpacking(),
+                                    currentUnpackFiles,
+                                    false);
+                        } catch (Exception e) {
+                            Log.e("XServerDisplayActivity", "preUnpack failed", e);
+                        }
+                    });
                 }
         }
 
@@ -4029,66 +4067,83 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 boolean useColdClient = parseBoolean(getShortcutSetting("useColdClient", container.isUseColdClient() ? "1" : "0"));
                 boolean launchRealSteam = parseBoolean(getShortcutSetting("launchRealSteam", container.isLaunchRealSteam() ? "1" : "0"));
 
+                // Pre-resolve: ensure game install path and steamapps/common symlink exist
+                // before ANY launch mode so the Steam directory structure is always valid.
+                String gameInstPath = resolveSteamGameInstallPath(appId);
+                if (gameInstPath != null && new File(gameInstPath).exists()) {
+                    WineUtils.ensureSteamappsCommonSymlink(container, gameInstPath);
+                }
+
+                // Resolve working dir through the container's actual filesystem path
+                // (not through getNativePath which can resolve to a different prefix).
+                File containerSteamDir = new File(container.getRootDir(),
+                        ".wine/drive_c/Program Files (x86)/Steam");
+
                 if (launchRealSteam) {
-                    // Real Steam mode: launch the actual Steam client with -applaunch
-                    File nativeDir = com.winlator.cmod.runtime.wine.WineUtils.getNativePath(imageFs, "C:\\Program Files (x86)\\Steam");
-                    if (nativeDir != null && nativeDir.exists()) launcherComponent.setWorkingDir(nativeDir);
-                    args = "/dir \"C:\\Program Files (x86)\\Steam\" \"steam.exe\" -silent -vgui -tcp -nobigpicture -nofriendsui -nochatui -nointro -applaunch " + appId;
+                    // Real Steam mode: launch the actual Steam client with -applaunch.
+                    // -no-browser prevents steamwebhelper.exe (CEF/Chromium) from spawning —
+                    // it crashes in a loop on ARM64EC/Wine because dxgi.dll can't initialize.
+                    // -noreactlogin prevents the React login UI which also uses CEF.
+                    if (containerSteamDir.exists()) launcherComponent.setWorkingDir(containerSteamDir);
+                    args = "\"C:\\Program Files (x86)\\Steam\\steam.exe\" -silent -no-browser -noreactlogin -vgui -tcp -nobigpicture -nofriendsui -nochatui -nointro -applaunch " + appId;
+                    envVars.put("WINEDLLOVERRIDES", "gameoverlayui=d;gameoverlayui64.exe=d");
                     Log.d("XServerDisplayActivity", "Real Steam launch via steam.exe for appId=" + appId);
                 } else if (useColdClient) {
-                    // ColdClient mode: pick loader matching game exe architecture
-                    File nativeDir = com.winlator.cmod.runtime.wine.WineUtils.getNativePath(imageFs, "C:\\Program Files (x86)\\Steam");
-                    if (nativeDir != null && nativeDir.exists()) launcherComponent.setWorkingDir(nativeDir);
-                    String gameInstPath = resolveSteamGameInstallPath(appId);
-                    String gameExe = findGameExeWinPath(appId, new File(gameInstPath));
-                    File gameExeFile = gameExe != null ? com.winlator.cmod.runtime.wine.WineUtils.getNativePath(imageFs, gameExe) : null;
-                    String loaderExe = resolveSteamLoaderExecutable(gameExeFile);
-                    args = "/dir \"C:\\Program Files (x86)\\Steam\" \"" + loaderExe + "\"";
-                    Log.d("XServerDisplayActivity", "ColdClient launch via " + loaderExe + " for appId=" + appId);
+                    // ColdClient mode: always use x64 loader — IgnoreLoaderArchDifference=1
+                    // in ColdClientLoader.ini handles architecture differences.
+                    if (containerSteamDir.exists()) launcherComponent.setWorkingDir(containerSteamDir);
+                    args = "\"C:\\Program Files (x86)\\Steam\\steamclient_loader_x64.exe\"";
+                    Log.d("XServerDisplayActivity", "ColdClient launch via steamclient_loader_x64.exe for appId=" + appId);
                 } else {
-                    // Goldberg mode (default): launch game exe from within Steam's directory structure
-                    // using steamapps\common\<game> symlink, NOT from A: drive directly
-                    String gameInstPathDir = resolveSteamGameInstallPath(appId);
-                    String gameDirName = new File(gameInstPathDir).getName();
-                    String gameExeWinPath = findGameExeWinPath(appId, new File(gameInstPathDir));
-                    
-                    // Set working dir to the Steam directory
-                    File nativeDir = com.winlator.cmod.runtime.wine.WineUtils.getNativePath(imageFs, "C:\\Program Files (x86)\\Steam");
-                    if (nativeDir != null && nativeDir.exists()) launcherComponent.setWorkingDir(nativeDir);
+                    // Goldberg mode (default): launch game exe through the Steam directory
+                    // structure. The symlink chain resolves automatically:
+                    //   C:\...\Steam → shared store → steamapps/common/<Game> → actual game dir
+                    // This avoids fragile drive-letter resolution and works for all games.
+                    String gameDirName = (gameInstPath != null) ? new File(gameInstPath).getName() : "";
+                    String relativeExe = resolveRelativeGameExe(appId, gameInstPath);
 
-                    if (gameExeWinPath != null) {
-                        String relativeExe = getRelativeGameExePath(gameExeWinPath, new File(gameInstPathDir));
-                        String steamExePath = "steamapps\\common\\" + gameDirName + "\\" + relativeExe;
+                    if (!relativeExe.isEmpty() && !gameDirName.isEmpty()) {
+                        String steamGameExe = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\"
+                                + gameDirName + "\\" + relativeExe.replace("/", "\\");
 
-                        // Extract just the filename and directory from the Steam-relative path
-                        int lastBackslash = steamExePath.lastIndexOf("\\");
-                        if (lastBackslash >= 0) {
-                            String dir = "C:\\Program Files (x86)\\Steam\\" + steamExePath.substring(0, lastBackslash);
-                            String file = steamExePath.substring(lastBackslash + 1);
-
-                            File steamNativeDir = com.winlator.cmod.runtime.wine.WineUtils.getNativePath(imageFs, dir);
-                            if (steamNativeDir != null && steamNativeDir.exists()) {
-                                launcherComponent.setWorkingDir(steamNativeDir);
-                                Log.d("XServerDisplayActivity", "Set native working dir for Steam process: " + steamNativeDir.getPath());
-                            }
-
-                            if (wineInfo != null && wineInfo.isArm64EC()) {
-                                args = "\"" + dir + "\\" + file + "\"" + steamExtraArgs;
-                            } else {
-                                args = "/dir " + StringUtils.escapeDOSPath(dir) + " \"" + file + "\"" + steamExtraArgs;
-                            }
-                        } else {
-                            args = "\"C:\\Program Files (x86)\\Steam\\" + steamExePath + "\"" + steamExtraArgs;
+                        // Set working dir via container filesystem path (follows symlinks to actual game dir)
+                        File containerGameDir = new File(containerSteamDir, "steamapps/common/" + gameDirName);
+                        File actualWorkDir;
+                        try { actualWorkDir = containerGameDir.getCanonicalFile(); }
+                        catch (IOException e) { actualWorkDir = containerGameDir; }
+                        String exeRelNative = relativeExe.replace("\\", "/");
+                        int lastSlash = exeRelNative.lastIndexOf("/");
+                        if (lastSlash > 0) {
+                            File exeParentDir = new File(actualWorkDir, exeRelNative.substring(0, lastSlash));
+                            if (exeParentDir.exists()) actualWorkDir = exeParentDir;
                         }
-                        Log.d("XServerDisplayActivity", "Direct launch from Steam dir: " + args);
-                    } else {
-                        args = "\"wfm.exe\"";
-                    }
+                        if (actualWorkDir.exists()) {
+                            launcherComponent.setWorkingDir(actualWorkDir);
+                            Log.d("XServerDisplayActivity", "Goldberg working dir: " + actualWorkDir.getPath());
+                        }
 
-                    // WINEPATH — point to the game directory within Steam structure
-                    String steamGamePath = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\" + gameDirName;
-                    envVars.put("WINEPATH", steamGamePath);
-                    Log.d("XServerDisplayActivity", "Set WINEPATH=" + steamGamePath + " for appId=" + appId);
+                        args = "\"" + steamGameExe + "\"" + steamExtraArgs;
+                        int lastBackslash = steamGameExe.lastIndexOf("\\");
+                        if (lastBackslash > 0) {
+                            envVars.put("WINEPATH", steamGameExe.substring(0, lastBackslash));
+                        }
+                        Log.d("XServerDisplayActivity", "Goldberg launch: " + steamGameExe);
+                    } else {
+                        // Fallback: try direct drive-letter path via findGameExeWinPath
+                        String gameExeWinPath = findGameExeWinPath(appId,
+                                new File(gameInstPath != null ? gameInstPath : ""));
+                        if (gameExeWinPath != null) {
+                            int lastBackslash = gameExeWinPath.lastIndexOf("\\");
+                            String dir = lastBackslash >= 0 ? gameExeWinPath.substring(0, lastBackslash) : "C:\\";
+                            args = "\"" + gameExeWinPath + "\"" + steamExtraArgs;
+                            envVars.put("WINEPATH", dir);
+                            Log.d("XServerDisplayActivity", "Goldberg fallback launch: " + gameExeWinPath);
+                        } else {
+                            Log.e("XServerDisplayActivity", "Could not find game exe for appId=" + appId
+                                    + " gameInstPath=" + gameInstPath + " relativeExe=" + relativeExe);
+                            args = "\"wfm.exe\"";
+                        }
+                    }
                 }
             } else if (gameSource.equals("EPIC") || gameSource.equals("GOG")) {
                 String extraArgs = shortcut.getSettingExtra("execArgs", container.getExecArgs());
@@ -4380,12 +4435,53 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     /**
+     * Writes ColdClientLoader.ini from a known relative exe path and game directory name.
+     * This avoids the fragile Windows-path-to-relative conversion in writeColdClientIniForLaunch.
+     */
+    private void writeColdClientIniDirect(int appId, String gameDirName, String relativeExe, boolean unpackFiles) {
+        File iniFile = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/ColdClientLoader.ini");
+        iniFile.getParentFile().mkdirs();
+
+        String exePath = "steamapps\\common\\" + gameDirName + "\\" + relativeExe.replace("/", "\\");
+        String exeRunDir = exePath;
+        int lastSep = exePath.lastIndexOf("\\");
+        if (lastSep > 0) {
+            exeRunDir = exePath.substring(0, lastSep);
+        }
+
+        String perGameExecArgs = shortcut != null ? shortcut.getSettingExtra("execArgs", container.getExecArgs()) : container.getExecArgs();
+        String exeCommandLine = perGameExecArgs != null ? perGameExecArgs : "";
+
+        // Always inject extra_dlls in ColdClient mode — the folder contains the runtime
+        // DRM patcher (steamclient_extra_x64.dll) that handles SteamStub at runtime.
+        // Without injection, games with SteamStub DRM fail even with Goldberg emulation.
+        String injectionSection = "[Injection]\nIgnoreLoaderArchDifference=1\n"
+                + "DllsToInjectFolder=extra_dlls\n";
+
+        String iniContent = "[SteamClient]\n" +
+                "\n" +
+                "Exe=" + exePath + "\n" +
+                "ExeRunDir=" + exeRunDir + "\n" +
+                "ExeCommandLine=" + exeCommandLine + "\n" +
+                "AppId=" + appId + "\n" +
+                "\n" +
+                "# path to the steamclient dlls, both must be set, absolute paths or relative to the loader directory\n" +
+                "SteamClientDll=steamclient.dll\n" +
+                "SteamClient64Dll=steamclient64.dll\n" +
+                "\n" +
+                injectionSection;
+
+        FileUtils.writeString(iniFile, iniContent);
+        Log.d("XServerDisplayActivity", "Wrote ColdClientLoader.ini: Exe=" + exePath + " ExeRunDir=" + exeRunDir + " AppId=" + appId);
+    }
+
+    /**
      * Writes ColdClientLoader.ini with the correct game exe path for the Goldberg Steam emulator.
      * Uses a relative path through the steamapps/common symlink so the loader resolves correctly.
      * @param appId Steam app ID
      * @param gameExeWinPath Windows-style path to the game exe (e.g. A:\SubDir\game.exe)
      */
-    private void writeColdClientIniForLaunch(int appId, String gameInstallPath, String gameExeWinPath) {
+    private void writeColdClientIniForLaunch(int appId, String gameInstallPath, String gameExeWinPath, boolean unpackFiles) {
         File iniFile = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/ColdClientLoader.ini");
         iniFile.getParentFile().mkdirs();
 
@@ -4399,16 +4495,25 @@ public class XServerDisplayActivity extends AppCompatActivity {
             exePath = "";
         }
 
-        // ExeRunDir tells ColdClientLoader where to set the game's working directory.
-        // Must point to the game's root inside steamapps/common so the exe can resolve
-        // Steam client DLLs and the game's own dependencies. Without this, Steam returns
-        // "Application Load Error 5:0000065434".
+        // ExeRunDir must match the executable's actual directory inside steamapps/common.
+        // Some Steam games place the launch exe in a nested subdirectory; forcing the game root
+        // causes the loader to start successfully but fail to hand off to the real process.
         String exeRunDir = "steamapps\\common\\" + gameDirName;
+        if (!exePath.isEmpty()) {
+            int lastSeparator = exePath.lastIndexOf("\\");
+            if (lastSeparator > 0) {
+                exeRunDir = exePath.substring(0, lastSeparator);
+            }
+        }
 
         String perGameExecArgs = shortcut != null ? shortcut.getSettingExtra("execArgs", container.getExecArgs()) : container.getExecArgs();
         String exeCommandLine = perGameExecArgs != null ? perGameExecArgs : "";
 
-        String injectionSection = "[Injection]\nIgnoreLoaderArchDifference=1\nDllsToInjectFolder=extra_dlls\n";
+        // Always inject extra_dlls in ColdClient mode — the folder contains the runtime
+        // DRM patcher (steamclient_extra_x64.dll) that handles SteamStub at runtime.
+        // Without injection, games with SteamStub DRM fail even with Goldberg emulation.
+        String injectionSection = "[Injection]\nIgnoreLoaderArchDifference=1\n"
+                + "DllsToInjectFolder=extra_dlls\n";
 
         String iniContent = "[SteamClient]\n" +
                 "\n" +
@@ -4459,6 +4564,79 @@ public class XServerDisplayActivity extends AppCompatActivity {
             return normalizedPath.substring(3);
         }
         return normalizedPath;
+    }
+
+    /**
+     * Resolves the game executable as a RELATIVE path within the game install directory.
+     * Tries multiple strategies with caching so subsequent launches are fast.
+     * Returns "" if no exe can be found.
+     */
+    private String resolveRelativeGameExe(int appId, String gameInstPath) {
+        // Strategy 1: container.executablePath (cached from previous launch or container setup)
+        String exePath = container.getExecutablePath();
+        if (exePath != null && !exePath.isEmpty() && gameInstPath != null) {
+            File test = new File(gameInstPath, exePath.replace("\\", "/"));
+            if (test.isFile()) {
+                Log.d("XServerDisplayActivity", "resolveRelativeGameExe: found via container.executablePath: " + exePath);
+                return exePath;
+            }
+        }
+
+        // Strategy 2: shortcut launch_exe_path
+        if (shortcut != null) {
+            String launchExe = shortcut.getExtra("launch_exe_path");
+            if (launchExe != null && !launchExe.isEmpty() && gameInstPath != null) {
+                File test = new File(gameInstPath, launchExe.replace("\\", "/"));
+                if (test.isFile()) {
+                    Log.d("XServerDisplayActivity", "resolveRelativeGameExe: found via shortcut.launch_exe_path: " + launchExe);
+                    return launchExe;
+                }
+            }
+        }
+
+        // Strategy 3: SteamService.getInstalledExe (queries Steam app metadata)
+        String steamExe = SteamBridge.getInstalledExe(appId);
+        if (steamExe != null && !steamExe.isEmpty() && gameInstPath != null) {
+            File test = new File(gameInstPath, steamExe.replace("\\", "/"));
+            if (test.isFile()) {
+                Log.d("XServerDisplayActivity", "resolveRelativeGameExe: found via SteamBridge.getInstalledExe: " + steamExe);
+                container.setExecutablePath(steamExe);
+                container.saveData();
+                if (shortcut != null && (shortcut.getExtra("launch_exe_path") == null || shortcut.getExtra("launch_exe_path").isEmpty())) {
+                    shortcut.putExtra("launch_exe_path", steamExe);
+                    shortcut.saveData();
+                }
+                return steamExe;
+            }
+        }
+
+        // Strategy 4: Auto-detect from game directory using BFS heuristic
+        if (gameInstPath != null) {
+            File gameDir = new File(gameInstPath);
+            if (gameDir.exists()) {
+                File detected = findGameExe(gameDir);
+                if (detected != null) {
+                    String absPath = getCanonicalPathOrAbsolute(detected);
+                    String basePath = getCanonicalPathOrAbsolute(gameDir);
+                    if (absPath.startsWith(basePath)) {
+                        String relative = absPath.substring(basePath.length());
+                        if (relative.startsWith(File.separator)) relative = relative.substring(1);
+                        Log.d("XServerDisplayActivity", "resolveRelativeGameExe: auto-detected: " + relative);
+                        container.setExecutablePath(relative);
+                        container.saveData();
+                        if (shortcut != null && (shortcut.getExtra("launch_exe_path") == null || shortcut.getExtra("launch_exe_path").isEmpty())) {
+                            shortcut.putExtra("launch_exe_path", relative);
+                            shortcut.saveData();
+                        }
+                        return relative;
+                    }
+                }
+            }
+        }
+
+        Log.w("XServerDisplayActivity", "resolveRelativeGameExe: all strategies failed for appId=" + appId
+                + " gameInstPath=" + gameInstPath);
+        return "";
     }
 
     /**
@@ -4585,6 +4763,129 @@ public class XServerDisplayActivity extends AppCompatActivity {
      * backs up originals as .orig (matching GameNative's convention), writes orig_dll_path.txt,
      * and calls writeCompleteSettingsDir next to each DLL found.
      */
+    private void injectSteamApiIfMissing(File gameDir, String appDirPath, String language,
+            boolean isOffline, boolean forceDlc, boolean useSteamInput, String ticketBase64, java.util.List<String> backupPaths) {
+        Log.w("XServerDisplayActivity", "No steam_api DLLs found in game directory — injecting Goldberg steam_api next to game exe");
+        try {
+            // Find the game exe to determine architecture
+            String exePath = shortcut != null ? shortcut.getExtra("launch_exe_path") : null;
+            File gameExe = null;
+            if (exePath != null && !exePath.isEmpty()) {
+                File candidate = new File(exePath);
+                if (!candidate.isAbsolute()) candidate = new File(gameDir, exePath);
+                if (candidate.exists()) gameExe = candidate;
+            }
+            // Fallback: find the first .exe in the game root (skip crash reporters etc.)
+            if (gameExe == null) {
+                File[] rootFiles = gameDir.listFiles();
+                if (rootFiles != null) {
+                    for (File f : rootFiles) {
+                        if (f.isFile() && f.getName().toLowerCase().endsWith(".exe")
+                                && !f.getName().toLowerCase().contains("crash")
+                                && !f.getName().toLowerCase().contains("unins")
+                                && !f.getName().toLowerCase().contains("redist")) {
+                            gameExe = f;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (gameExe != null && gameExe.exists()) {
+                File exeDir = gameExe.getParentFile();
+                boolean isX64 = isExe64Bit(gameExe);
+                String dllName = isX64 ? "steam_api64.dll" : "steam_api.dll";
+                String assetName = isX64 ? "steampipe/steam_api64.dll" : "steampipe/steam_api.dll";
+                String stubAsset = isX64 ? "steampipe/steamclient64.dll" : "steampipe/steamclient.dll";
+                String stubName = isX64 ? "steamclient64.dll" : "steamclient.dll";
+
+                // Place Goldberg steam_api DLL next to the game exe
+                File targetDll = new File(exeDir, dllName);
+                if (!targetDll.exists()) {
+                    try (InputStream is = getAssets().open(assetName);
+                         java.io.FileOutputStream fos = new java.io.FileOutputStream(targetDll)) {
+                        byte[] buf = new byte[8192];
+                        int len;
+                        while ((len = is.read(buf)) >= 0) fos.write(buf, 0, len);
+                    }
+                    // Create empty .orig so restoreSteamApiDlls knows this was injected
+                    new File(targetDll.getAbsolutePath() + ".orig").createNewFile();
+                    Log.d("XServerDisplayActivity",
+                            "Injected Goldberg " + dllName + " next to " + gameExe.getName());
+                }
+
+                // Also place the matching steamclient stub
+                File stubFile = new File(exeDir, stubName);
+                if (!stubFile.exists()) {
+                    try (InputStream is = getAssets().open(stubAsset);
+                         java.io.FileOutputStream fos = new java.io.FileOutputStream(stubFile)) {
+                        byte[] buf = new byte[8192];
+                        int len;
+                        while ((len = is.read(buf)) >= 0) fos.write(buf, 0, len);
+                    }
+                    Log.d("XServerDisplayActivity",
+                            "Injected steamclient stub " + stubName + " next to " + gameExe.getName());
+                }
+
+                // Check for Capcom-style embedded Steam directory (e.g. Steam/steamclient64.dll).
+                // They use explicit relative paths (LoadLibrary("Steam\\steamclient64.dll")), which bypasses
+                // the standard directory search order. We must replace the file inside the Steam dir itself.
+                File gameSteamDir = new File(exeDir, "Steam");
+                if (gameSteamDir.exists() && gameSteamDir.isDirectory()) {
+                    File embeddedClient = new File(gameSteamDir, stubName);
+                    if (embeddedClient.exists()) {
+                        File backupClient = new File(gameSteamDir, stubName + ".orig");
+                        if (!backupClient.exists()) {
+                            FileUtils.copy(embeddedClient, backupClient);
+                        }
+                        
+                        embeddedClient.delete();
+                        try (InputStream is = getAssets().open(stubAsset);
+                             java.io.FileOutputStream fos = new java.io.FileOutputStream(embeddedClient)) {
+                            byte[] buf = new byte[8192];
+                            int len;
+                            while ((len = is.read(buf)) >= 0) fos.write(buf, 0, len);
+                        }
+                        Log.w("XServerDisplayActivity", "Intercepted explicit embedded Steam client: " + embeddedClient.getAbsolutePath());
+                        
+                        if (backupPaths != null && appDirPath != null) {
+                            String relPath = backupClient.getAbsolutePath();
+                            if (relPath.startsWith(appDirPath)) {
+                                relPath = relPath.substring(appDirPath.length());
+                                if (relPath.startsWith("/")) relPath = relPath.substring(1);
+                            }
+                            backupPaths.add(relPath);
+                        }
+                        
+                        // Drop settings there too
+                        SteamUtils.writeCompleteSettingsDir(gameSteamDir,
+                                Integer.parseInt(shortcut.getExtra("app_id")),
+                                language, isOffline, forceDlc, useSteamInput, ticketBase64);
+                    }
+                }
+
+                // Write steam_settings next to the injected DLL
+                SteamUtils.writeCompleteSettingsDir(exeDir,
+                        Integer.parseInt(shortcut.getExtra("app_id")),
+                        language, isOffline, forceDlc, useSteamInput, ticketBase64);
+
+                // Track the injected DLL as a backup path so we can clean it up later
+                if (backupPaths != null && appDirPath != null) {
+                    String relPath = targetDll.getAbsolutePath();
+                    if (relPath.startsWith(appDirPath)) {
+                        relPath = relPath.substring(appDirPath.length());
+                        if (relPath.startsWith("/")) relPath = relPath.substring(1);
+                    }
+                    backupPaths.add(relPath);
+                }
+            } else {
+                Log.w("XServerDisplayActivity", "Could not find game exe to inject steam_api DLL");
+            }
+        } catch (Exception e) {
+            Log.e("XServerDisplayActivity", "Failed to inject steam_api DLL for no-DLL game", e);
+        }
+    }
+
     private void replaceSteamApiDlls(File gameDir, String appDirPath, String language,
             boolean isOffline, boolean forceDlc, boolean useSteamInput, String ticketBase64) {
         if (gameDir == null || !gameDir.exists()) return;
@@ -4592,6 +4893,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
         java.util.List<String> backupPaths = new java.util.ArrayList<>();
         replaceSteamApiDllsRecursive(gameDir, appDirPath, language, isOffline, forceDlc,
                 useSteamInput, ticketBase64, backupPaths);
+
+        // ── Handle games with NO steam_api*.dll at all ──────────────────────────
+        // Games like Monster Hunter Stories (MHST.exe) don't ship with steam_api64.dll.
+        // They communicate with Steam through the embedded Steam/ directory's
+        // steamclient64.dll directly. Without a steam_api64.dll for Goldberg to hook
+        // into, the game fails with "Application Load Error 3:0000065432".
+        if (backupPaths.isEmpty()) {
+            injectSteamApiIfMissing(gameDir, appDirPath, language, isOffline, forceDlc, useSteamInput, ticketBase64, backupPaths);
+        }
 
         // Write orig_dll_path.txt listing all .orig backup paths (matches GameNative)
         if (!backupPaths.isEmpty()) {
@@ -4603,6 +4913,45 @@ public class XServerDisplayActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.w("XServerDisplayActivity", "Failed to write orig_dll_path.txt", e);
             }
+        }
+    }
+
+    /**
+     * Checks if any steam_api.dll or steam_api64.dll exists anywhere in the game directory tree.
+     * Used to validate that the STEAM_DLL_REPLACED marker is not stale.
+     */
+    private boolean hasSteamApiDllInTree(File dir) {
+        if (dir == null || !dir.exists()) return false;
+        File[] files = dir.listFiles();
+        if (files == null) return false;
+        for (File file : files) {
+            if (file.isDirectory()) {
+                if (!file.getName().equals("steam_settings") && hasSteamApiDllInTree(file)) return true;
+            } else {
+                String name = file.getName().toLowerCase();
+                if (name.equals("steam_api.dll") || name.equals("steam_api64.dll")) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Reads the PE header of an exe to determine if it targets x64 (PE32+).
+     * Returns true for x86_64/ARM64, false for x86/unknown.
+     */
+    private boolean isExe64Bit(File exeFile) {
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(exeFile, "r")) {
+            // Read DOS header e_lfanew (offset to PE header) at offset 0x3C
+            raf.seek(0x3C);
+            int peOffset = Integer.reverseBytes(raf.readInt()); // little-endian
+            // Read PE signature (4 bytes) + Machine field (2 bytes)
+            raf.seek(peOffset + 4); // skip "PE\0\0"
+            int machine = Short.reverseBytes(raf.readShort()) & 0xFFFF; // unsigned little-endian
+            // 0x8664 = AMD64, 0xAA64 = ARM64
+            return machine == 0x8664 || machine == 0xAA64;
+        } catch (Exception e) {
+            Log.w("XServerDisplayActivity", "Could not determine exe architecture, assuming x64", e);
+            return true; // Default to x64 as most modern Steam games are 64-bit
         }
     }
 
@@ -4789,7 +5138,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
                         File target = new File(file.getParent(), originalName);
 
                         if (target.exists()) target.delete();
-                        FileUtils.copy(file, target);
+                        if (file.length() == 0) {
+                            // 0-byte .orig means the file was injected (didn't exist originally).
+                            // Leave it deleted, don't copy a 0-byte file.
+                            Log.d("XServerDisplayActivity", "Removed injected target " + originalName);
+                        } else {
+                            FileUtils.copy(file, target);
+                        }
 
                         // Remove the experimental steamclient stub that was placed alongside
                         String stubName = name.equals("steam_api64.dll.orig")
@@ -4809,7 +5164,76 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Checks whether the /dev/ntsync device node exists and is accessible.
+     * On many Android devices (especially custom kernels) the node may exist
+     * but lack the permissions needed by the app to open it.
+     */
+    private boolean canAccessNtsyncDevice() {
+        java.io.File ntsyncDev = new java.io.File("/dev/ntsync");
+        if (!ntsyncDev.exists()) {
+            Log.d("XServerDisplayActivity", "NTSync: /dev/ntsync does not exist");
+            return false;
+        }
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(ntsyncDev)) {
+            Log.d("XServerDisplayActivity", "NTSync: /dev/ntsync is accessible");
+            return true;
+        } catch (Exception e) {
+            Log.d("XServerDisplayActivity", "NTSync: /dev/ntsync exists but is not accessible: " + e.getMessage());
+            return false;
+        }
+    }
 
+    /**
+     * Normalizes synchronization environment variables.
+     *
+     * NTSync, ESync, and FSync are mutually exclusive kernel-level synchronization
+     * methods for Wine. This method enforces correct precedence:
+     *
+     * 1. If NTSync is requested (PROTON_USE_NTSYNC=1 or WINENTSYNC=1):
+     *    a. If /dev/ntsync is accessible: enable NTSync, disable ESync and FSync
+     *    b. If /dev/ntsync is NOT accessible: fall back to plain Wine server sync
+     *       (disable all fast-sync methods for maximum compatibility)
+     *
+     * 2. Translates PROTON_USE_NTSYNC into WINENTSYNC so both Proton-patched and
+     *    Crossover/Wine-GE builds activate the driver regardless of which env var
+     *    name their patches use.
+     */
+    private void normalizeSyncEnvVars(com.winlator.cmod.runtime.wine.EnvVars envVars) {
+        boolean ntSyncRequested = "1".equals(envVars.get("PROTON_USE_NTSYNC"))
+                || "1".equals(envVars.get("WINENTSYNC"));
+
+        if (!ntSyncRequested) return;
+
+        if (canAccessNtsyncDevice()) {
+            // NTSync available — enable it and disable competing sync methods
+            envVars.put("WINENTSYNC", "1");
+            envVars.put("PROTON_USE_NTSYNC", "1");
+
+            // Explicitly disable ESync and FSync (mutually exclusive with NTSync)
+            envVars.remove("WINEESYNC");
+            envVars.remove("WINEFSYNC");
+            envVars.put("PROTON_NO_ESYNC", "1");
+            envVars.put("PROTON_NO_FSYNC", "1");
+
+            Log.d("XServerDisplayActivity", "NTSync: enabled — disabled ESync/FSync");
+        } else {
+            // NTSync requested but device is inaccessible — fall back to plain sync.
+            // Standard Winlator often forces ESync by default, but if NTSync failed,
+            // forcing ESync can cause "Too many open files" errors. Plain server-side
+            // sync is the safest fallback to ensure the game actually boots.
+            envVars.remove("WINENTSYNC");
+            envVars.remove("PROTON_USE_NTSYNC");
+            envVars.remove("WINEESYNC");
+            envVars.remove("WINEFSYNC");
+            envVars.put("WINE_DISABLE_FAST_SYNC", "1");
+            envVars.put("PROTON_NO_ESYNC", "1");
+            envVars.put("PROTON_NO_FSYNC", "1");
+
+            Log.w("XServerDisplayActivity",
+                    "NTSync: requested but /dev/ntsync not accessible — falling back to plain sync");
+        }
+    }
 
     /**
      * Runs all pre-game setup: Mono installation, redistributables, and Steamless.
@@ -4828,24 +5252,22 @@ public class XServerDisplayActivity extends AppCompatActivity {
         // Step 2: Install redistributables for this game if not already done in this container
         installRedistributablesIfNeeded(launcher);
 
-        // Step 3: Run Steamless DRM stripping only when the Legacy DRM toggle is ON.
+        // Step 3: Run Steamless DRM stripping.
         // ColdClient's runtime patcher (extra_dlls) handles most games automatically,
-        // so Steamless is only needed as a fallback for stubborn SteamStub variants.
+        // but Steamless is needed as a fallback for stubborn SteamStub variants.
+        // Single-exe unpacking runs by default for Steam games when needsUnpacking is set;
+        // the "Legacy DRM" toggle (unpackFiles) enables multi-exe scanning mode.
         if (launchRealSteam) {
-            if (unpackFiles) {
-                Log.d("XServerDisplayActivity",
-                        "Skipping Steamless/unpack flow because Launch Steam Client is enabled");
-            }
+            Log.d("XServerDisplayActivity",
+                    "Skipping Steamless/unpack flow because Launch Steam Client is enabled");
             return;
         }
-        if (unpackFiles) {
-            if (!monoReady) {
-                Log.w("XServerDisplayActivity", "Skipping Steamless — Mono not installed yet, will retry next launch");
-                return;
-            }
-            // Run Steamless if needed, or if the toggle was just enabled and no
-            // .unpacked.exe exists yet (user turned Legacy DRM on for the first time).
-            boolean unpackedExeExists = doesUnpackedExeExist();
+        if (!monoReady) {
+            Log.w("XServerDisplayActivity", "Skipping Steamless — Mono not installed yet, will retry next launch");
+            return;
+        }
+        boolean unpackedExeExists = doesUnpackedExeExist();
+        if (needsUnpacking || unpackFiles || !unpackedExeExists) {
             if (needsUnpacking || !unpackedExeExists) {
                 runSteamlessOnExe(launcher);
             } else {
@@ -4877,8 +5299,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
             String unixPath = executablePath.replace('\\', '/');
             File exe = new File(gameInstallPath, unixPath);
             File unpackedExe = new File(gameInstallPath, unixPath + ".unpacked.exe");
+            File originalExe = new File(gameInstallPath, unixPath + ".original.exe");
 
-            if (exe.exists() && unpackedExe.exists() && exe.length() != unpackedExe.length()) {
+            // If both the unpacked exe and the original backup exist, the unpack was valid.
+            // Always re-apply the unpacked version — a prior mode switch may have restored
+            // the original, and comparing solely by file size is unreliable (some SteamStub
+            // variants produce unpacked files of identical size).
+            if (unpackedExe.exists() && originalExe.exists()) {
                 java.nio.file.Files.copy(unpackedExe.toPath(), exe.toPath(),
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 Log.d("XServerDisplayActivity", "Restored unpacked exe (was reverted by mode switch)");
@@ -5077,8 +5504,18 @@ public class XServerDisplayActivity extends AppCompatActivity {
     /**
      * P2: Runs Steamless DRM stripping on the game executable.
      * Called via the preUnpack callback after box64 is ready.
-     * Installs Wine Mono first (needed for .NET-based Steamless CLI),
-     * then runs Steamless on the exe, and handles the file swap.
+     *
+     * Follows the official Steamless CLI flow (https://github.com/atom0s/Steamless):
+     *   1. Loads unpacker plugins from Plugins/ subdirectory
+     *   2. Each plugin attempts to detect and unpack SteamStub variants (v1.0-v3.1)
+     *   3. On success, writes "{filename}.unpacked.exe" next to the original
+     *   4. Returns exit code 0 on success, 1 on failure
+     *
+     * We pass --realign and --recalcchecksum to produce a valid PE post-unpack,
+     * matching best-practice usage documented in Steamless.
+     *
+     * Wine Mono must be installed first (handled by installMonoIfNeeded() in the
+     * pre-game setup flow) since Steamless.CLI.exe is a .NET Framework application.
      */
     private void runSteamlessOnExe(GuestProgramLauncherComponent launcher) {
         if (shortcut == null || !"STEAM".equals(shortcut.getExtra("game_source"))) return;
@@ -5093,23 +5530,30 @@ public class XServerDisplayActivity extends AppCompatActivity {
         String gameInstallPath = resolveSteamGameInstallPath(appId);
         if (gameInstallPath == null || gameInstallPath.isEmpty()) return;
 
-        // Mono is now installed by installMonoIfNeeded() in the pre-game setup flow.
-        // No need to install it again here.
-
-        // Extract Steamless.CLI.exe if not present
+        // Extract Steamless.CLI.exe + Plugins/ if not present
         File steamlessDir = new File(imageFs.getRootDir(), "Steamless");
         File steamlessCli = new File(steamlessDir, "Steamless.CLI.exe");
-        if (!steamlessCli.exists()) {
+        File pluginsDir = new File(steamlessDir, "Plugins");
+        if (!steamlessCli.exists() || !pluginsDir.exists()) {
             try {
                 steamlessDir.mkdirs();
                 TarCompressorUtils.extract(
                         TarCompressorUtils.Type.ZSTD,
                         this, "extras.tzst", imageFs.getRootDir());
-                Log.d("XServerDisplayActivity", "Extracted Steamless CLI to " + steamlessDir);
+                // Ensure extracted binaries are executable
+                com.winlator.cmod.shared.io.FileUtils.chmod(steamlessCli, 0755);
+                Log.d("XServerDisplayActivity", "Extracted Steamless CLI + Plugins to " + steamlessDir);
             } catch (Exception e) {
                 Log.e("XServerDisplayActivity", "Failed to extract Steamless", e);
                 return;
             }
+        }
+
+        // Validate Plugins directory has unpacker DLLs — Steamless CLI will fail
+        // with "No plugins were loaded" if this directory is missing or empty
+        if (!pluginsDir.exists() || pluginsDir.list() == null || pluginsDir.list().length == 0) {
+            Log.e("XServerDisplayActivity", "Steamless Plugins/ directory is missing or empty — cannot unpack");
+            return;
         }
 
         // Find the game executable and run Steamless on it
@@ -5122,22 +5566,39 @@ public class XServerDisplayActivity extends AppCompatActivity {
             return;
         }
 
+        File batchFile = null;
         try {
-            String normalizedPath = executablePath.replace('/', '\\');
             File hostExe = new File(gameInstallPath, executablePath.replace('\\', '/'));
-            String windowsPath = com.winlator.cmod.runtime.wine.WineUtils.hostPathToRootWinePath(container, hostExe.getAbsolutePath());
 
-            // Create batch file to handle paths with spaces
-            File batchFile = new File(imageFs.getRootDir(), "tmp/steamless_wrapper.bat");
+            // Build Windows path for Steamless using the C:\WinNative\Games symlink
+            // (most reliable — avoids drive-mapping gaps where hostPathToRootWinePath
+            // skips the A: drive and falls through to Z:\).
+            String windowsPath = com.winlator.cmod.runtime.wine.WineUtils.getDriveCGameWindowsPath(
+                    container, "STEAM", gameInstallPath, hostExe.getAbsolutePath());
+            if (windowsPath == null || windowsPath.isEmpty()) {
+                // Fallback to generic drive-mapped path resolution
+                windowsPath = com.winlator.cmod.runtime.wine.WineUtils.hostPathToRootWinePath(container, hostExe.getAbsolutePath());
+            }
+            Log.d("XServerDisplayActivity", "Steamless: resolved windowsPath=" + windowsPath
+                    + " (hostExe=" + hostExe.getAbsolutePath() + ")");
+
+            // Create batch file to handle paths with spaces.
+            batchFile = new File(imageFs.getRootDir(), "tmp/steamless_wrapper.bat");
             batchFile.getParentFile().mkdirs();
-            com.winlator.cmod.shared.io.FileUtils.writeString(batchFile,
-                    "@echo off\r\nz:\\Steamless\\Steamless.CLI.exe \"" + windowsPath + "\"\r\n");
+            String batchContent = "@echo off\r\n"
+                    + "z:\\Steamless\\Steamless.CLI.exe \"" + windowsPath + "\"\r\n"
+                    + "echo STEAMLESS_EXIT_CODE=%ERRORLEVEL%\r\n";
+            com.winlator.cmod.shared.io.FileUtils.writeString(batchFile, batchContent);
 
             Log.d("XServerDisplayActivity", "Steamless: running on " + windowsPath + " (exe=" + executablePath + ")");
             String slCmd = "wine z:\\tmp\\steamless_wrapper.bat";
             String slOutput = launcher.execShellCommand(slCmd);
-            Log.d("XServerDisplayActivity", "Steamless Wine output: " + slOutput);
-            batchFile.delete();
+            Log.d("XServerDisplayActivity", "Steamless CLI output: " + slOutput);
+
+            // Steamless CLI prints "Successfully unpacked file!" on success (exit code 0).
+            // If this string is absent, the unpacking failed — do NOT swap files.
+            boolean steamlessSuccess = slOutput != null
+                    && slOutput.toLowerCase().contains("successfully unpacked");
 
             // Handle file swap: .unpacked.exe -> exe, exe -> .original.exe
             String unixPath = executablePath.replace('\\', '/');
@@ -5147,29 +5608,70 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
             Log.d("XServerDisplayActivity", "Steamless: checking exe=" + exe.getAbsolutePath()
                     + " exists=" + exe.exists() + " unpacked=" + unpackedExe.getAbsolutePath()
-                    + " exists=" + unpackedExe.exists());
+                    + " exists=" + unpackedExe.exists() + " cliSuccess=" + steamlessSuccess);
 
-            if (exe.exists() && unpackedExe.exists()) {
+            if (steamlessSuccess && exe.exists() && unpackedExe.exists()) {
+                // Backup the original DRM-protected exe before overwriting
                 if (!originalExe.exists()) {
+                    java.nio.file.Files.copy(exe.toPath(), originalExe.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    Log.d("XServerDisplayActivity", "Steamless: backed up original exe as " + originalExe.getName());
+                }
+                // Replace the active exe with the unpacked version
+                java.nio.file.Files.copy(unpackedExe.toPath(), exe.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                Log.d("XServerDisplayActivity", "Steamless: swapped exe with unpacked version");
+
+                // Set the STEAM_DRM_PATCHED marker so mode switches know we've patched
+                com.winlator.cmod.feature.stores.steam.utils.MarkerUtils.INSTANCE.addMarker(
+                        gameInstallPath, com.winlator.cmod.feature.stores.steam.enums.Marker.STEAM_DRM_PATCHED);
+
+                // Unpacking succeeded — clear the flag and persist
+                launcher.execShellCommand("wineserver -k");
+                container.setNeedsUnpacking(false);
+                container.saveData();
+            } else if (!steamlessSuccess && !unpackedExe.exists()) {
+                // Steamless ran but couldn't unpack. Distinguish between:
+                //  - Definitive: "All unpackers failed" = game doesn't use SteamStub DRM.
+                //    Stop retrying to avoid wasting ~5s on every launch.
+                //  - Transient: Wine/Mono crash, missing deps, etc. = keep retrying.
+                boolean allUnpackersFailed = slOutput != null
+                        && slOutput.toLowerCase().contains("all unpackers failed");
+
+                if (allUnpackersFailed) {
+                    Log.w("XServerDisplayActivity",
+                            "Steamless: game does not use SteamStub DRM (all unpackers failed). "
+                            + "Disabling Legacy DRM for this game to avoid future overhead.");
+                    launcher.execShellCommand("wineserver -k");
+                    container.setNeedsUnpacking(false);
+                    container.saveData();
+                } else {
+                    Log.w("XServerDisplayActivity",
+                            "Steamless: transient failure (CLI ran but no .unpacked.exe), will retry next launch");
+                }
+            } else if (!steamlessSuccess && unpackedExe.exists()) {
+                // Edge case: .unpacked.exe exists from a prior run but CLI reported failure
+                // this time (e.g., file was already unpacked). Use the existing unpacked file.
+                if (!originalExe.exists() && exe.exists()) {
                     java.nio.file.Files.copy(exe.toPath(), originalExe.toPath(),
                             java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 }
                 java.nio.file.Files.copy(unpackedExe.toPath(), exe.toPath(),
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                Log.d("XServerDisplayActivity", "Steamless: swapped exe with unpacked version");
+                Log.d("XServerDisplayActivity", "Steamless: used existing .unpacked.exe from prior run");
 
-                // Only mark as done if unpacking actually succeeded
-                launcher.execShellCommand("wineserver -k");
-                container.setNeedsUnpacking(false);
-                container.saveData();
-            } else {
-                Log.w("XServerDisplayActivity", "Steamless: unpacking failed, skipping for future launches");
+                com.winlator.cmod.feature.stores.steam.utils.MarkerUtils.INSTANCE.addMarker(
+                        gameInstallPath, com.winlator.cmod.feature.stores.steam.enums.Marker.STEAM_DRM_PATCHED);
                 launcher.execShellCommand("wineserver -k");
                 container.setNeedsUnpacking(false);
                 container.saveData();
             }
         } catch (Exception e) {
+            // Don't set needsUnpacking=false — allow retry on next launch
             Log.e("XServerDisplayActivity", "Steamless execution failed, will retry next launch", e);
+        } finally {
+            // Always clean up the batch wrapper
+            if (batchFile != null && batchFile.exists()) batchFile.delete();
         }
     }
 
@@ -5534,44 +6036,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
         return rebuilt.toString();
     }
 
-    private String resolveSteamLoaderExecutable(@Nullable File gameExeFile) {
-        com.winlator.cmod.runtime.wine.PEHelper.Architecture architecture =
-                com.winlator.cmod.runtime.wine.PEHelper.detectArchitecture(gameExeFile);
-        if (architecture == com.winlator.cmod.runtime.wine.PEHelper.Architecture.X86) {
-            cacheSteamGameArchitecture("x86");
-            return "steamclient_loader_x32.exe";
-        }
-        if (architecture == com.winlator.cmod.runtime.wine.PEHelper.Architecture.X64) {
-            cacheSteamGameArchitecture("x64");
-            return "steamclient_loader_x64.exe";
-        }
-
-        String cachedArchitecture = shortcut != null ? shortcut.getExtra(SHORTCUT_KEY_STEAM_GAME_ARCH) : "";
-        if ("x86".equalsIgnoreCase(cachedArchitecture)) {
-            Log.d("XServerDisplayActivity", "Using cached x86 Steam loader selection");
-            return "steamclient_loader_x32.exe";
-        }
-        if ("x64".equalsIgnoreCase(cachedArchitecture)) {
-            Log.d("XServerDisplayActivity", "Using cached x64 Steam loader selection");
-            return "steamclient_loader_x64.exe";
-        }
-
-        String configuredPath = shortcut != null && shortcut.path != null
-                ? shortcut.path.toLowerCase(Locale.ROOT)
-                : "";
-        if (configuredPath.endsWith("steamclient_loader_x32.exe")) {
-            Log.w("XServerDisplayActivity", "Falling back to shortcut-configured x32 Steam loader");
-            return "steamclient_loader_x32.exe";
-        }
-        if (configuredPath.endsWith("steamclient_loader_x64.exe")) {
-            Log.w("XServerDisplayActivity", "Falling back to shortcut-configured x64 Steam loader");
-            return "steamclient_loader_x64.exe";
-        }
-
-        Log.w("XServerDisplayActivity", "Unable to detect Steam game architecture for loader selection, defaulting to x64");
-        return "steamclient_loader_x64.exe";
-    }
-
     private void prepareCustomGameSteamIsolation() {
         if (!isCustomShortcut() || shortcut == null || container == null) return;
 
@@ -5708,14 +6172,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
         return null;
     }
 
-    private void cacheSteamGameArchitecture(String architecture) {
-        if (shortcut == null || architecture == null || architecture.isEmpty()) return;
-        String currentValue = shortcut.getExtra(SHORTCUT_KEY_STEAM_GAME_ARCH);
-        if (architecture.equalsIgnoreCase(currentValue)) return;
-        shortcut.putExtra(SHORTCUT_KEY_STEAM_GAME_ARCH, architecture.toLowerCase(Locale.ROOT));
-        shortcut.saveData();
-    }
-
     /**
      * Sets up the Steam environment: steamapps/common symlink, ACF manifest,
      * Wine registry entries for Steam paths, and steam.cfg for bootstrap inhibit.
@@ -5768,6 +6224,23 @@ public class XServerDisplayActivity extends AppCompatActivity {
             // InstalledDepots, buildId, SizeOnDisk, UserConfig/language — matching GameNative.
             // Falls back gracefully if SteamService has no appInfo for this game.
             SteamUtils.createAppManifest(this, appId);
+
+            // SteamUtils.createAppManifest writes the ACF to imageFs.wineprefix which may differ
+            // from the container's Steam dir (which symlinks to .shared/steam-client-store).
+            // Real Steam reads from the shared store, so ensure the ACF also exists there.
+            File defaultAcf = new File(imageFs.getRootDir(),
+                    ImageFs.WINEPREFIX + "/drive_c/Program Files (x86)/Steam/steamapps/appmanifest_" + appId + ".acf");
+            File containerAcf = new File(steamappsDir, "appmanifest_" + appId + ".acf");
+            if (defaultAcf.exists() && !containerAcf.exists()) {
+                try {
+                    java.nio.file.Files.copy(defaultAcf.toPath(), containerAcf.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    Log.d("XServerDisplayActivity", "Copied ACF manifest to container steamapps dir");
+                } catch (Exception e) {
+                    Log.w("XServerDisplayActivity", "Failed to copy ACF to container steamapps", e);
+                }
+            }
+
             ensureSteamLibraryFoldersConfig(steamDir, steamappsDir);
 
             // Ensure the Steamworks Common Redistributables ACF always exists as a fallback

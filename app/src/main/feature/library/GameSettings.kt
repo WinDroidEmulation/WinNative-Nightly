@@ -2250,6 +2250,10 @@ private fun EnvVarRow(
     trailing: (@Composable () -> Unit)? = null
 ) {
     var nameMenuExpanded by remember { mutableStateOf(false) }
+    var isCustomMode by remember(name) {
+        mutableStateOf(name.isNotEmpty() && findKnownEnvVar(name) == null)
+    }
+    var customText by remember(name) { mutableStateOf(if (isCustomMode) name else "") }
 
     Row(
         modifier = Modifier
@@ -2257,33 +2261,65 @@ private fun EnvVarRow(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Name dropdown
+        // Name dropdown or custom text field
         Box(modifier = Modifier.weight(1.6f)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(InputSurface)
-                    .border(1.dp, AccentBlue.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                    .clickable { nameMenuExpanded = true }
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (name.isEmpty()) stringResource(R.string.container_config_new_env_var) else name,
-                        color = if (name.isEmpty()) TextDim else TextPrimary,
-                        fontSize = 13.sp,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Icon(
-                        Icons.Outlined.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
+            if (isCustomMode) {
+                // Custom mode: show editable text field for variable name
+                BasicTextField(
+                    value = customText,
+                    onValueChange = { newText ->
+                        customText = newText
+                        onNameChange(newText.trim())
+                    },
+                    textStyle = TextStyle(
+                        color = TextPrimary,
+                        fontSize = 13.sp
+                    ),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(InputSurface)
+                        .border(1.dp, AccentBlue.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    decorationBox = { innerTextField ->
+                        if (customText.isEmpty()) {
+                            Text(
+                                stringResource(R.string.container_config_new_env_var),
+                                color = TextDim,
+                                fontSize = 13.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(InputSurface)
+                        .border(1.dp, AccentBlue.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .clickable { nameMenuExpanded = true }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (name.isEmpty()) stringResource(R.string.container_config_new_env_var) else name,
+                            color = if (name.isEmpty()) TextDim else TextPrimary,
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Icon(
+                            Icons.Outlined.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
             DropdownMenu(
@@ -2295,8 +2331,36 @@ private fun EnvVarRow(
                     .height(360.dp)
                     .width(260.dp)
             ) {
-                EnvVarsView.knownEnvVars.forEach { known ->
-                    val knownName = known[0]
+                // "Custom" option at top — allows typing a variable name
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(R.string.common_ui_custom),
+                            color = AccentBlue,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    onClick = {
+                        isCustomMode = true
+                        customText = ""
+                        onNameChange("")
+                        nameMenuExpanded = false
+                    }
+                )
+                // Divider after Custom
+                Box(Modifier.fillMaxWidth().height(1.dp).background(DividerColor))
+
+                // Sort: unselected vars in ABC order, then selected vars in ABC order
+                val allKnown = EnvVarsView.knownEnvVars.map { it[0] }
+                val unselected = allKnown
+                    .filter { it !in excludeOtherNames && it != name }
+                    .sortedBy { it.uppercase() }
+                val selected = allKnown
+                    .filter { it in excludeOtherNames }
+                    .sortedBy { it.uppercase() }
+
+                (unselected + selected).forEach { knownName ->
                     val disabled = knownName != name && knownName in excludeOtherNames
                     DropdownMenuItem(
                         enabled = !disabled,
@@ -2308,6 +2372,8 @@ private fun EnvVarRow(
                             )
                         },
                         onClick = {
+                            isCustomMode = false
+                            customText = ""
                             onNameChange(knownName)
                             nameMenuExpanded = false
                         }
