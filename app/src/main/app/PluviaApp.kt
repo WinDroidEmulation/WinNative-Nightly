@@ -12,6 +12,7 @@ import com.winlator.cmod.feature.stores.gog.service.GOGConstants
 import com.winlator.cmod.feature.stores.gog.service.GOGService
 import com.winlator.cmod.feature.stores.steam.events.EventDispatcher
 import com.winlator.cmod.feature.stores.steam.service.SteamService
+import com.winlator.cmod.shared.android.NotificationHelper
 import com.winlator.cmod.feature.stores.steam.utils.PrefManager
 import com.winlator.cmod.runtime.display.XServerDisplayActivity
 import com.winlator.cmod.shared.android.RefreshRateUtils
@@ -42,6 +43,9 @@ class PluviaApp : Application() {
         PrefManager.init(this)
         GOGConstants.init(this)
         GOGAuthManager.updateLoginStatus(this)
+
+        // Sweep any stale app-owned notifications left behind by abnormal kills.
+        NotificationHelper.cancelAll(this)
 
         if (PrefManager.enableSteamLogs) {
             timber.log.Timber.plant(timber.log.Timber.DebugTree())

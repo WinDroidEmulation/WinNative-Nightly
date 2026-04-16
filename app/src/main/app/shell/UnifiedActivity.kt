@@ -186,6 +186,7 @@ import com.winlator.cmod.runtime.input.ControllerHelper
 import com.winlator.cmod.runtime.wine.PeIconExtractor
 import com.winlator.cmod.shared.android.ActivityResultHost
 import com.winlator.cmod.shared.android.AppUtils
+import com.winlator.cmod.shared.android.NotificationHelper
 import com.winlator.cmod.shared.android.RefreshRateUtils
 import com.winlator.cmod.shared.io.StorageUtils
 import com.winlator.cmod.shared.ui.CarouselView
@@ -706,6 +707,7 @@ class UnifiedActivity :
         SteamService.stop()
         EpicService.stop()
         GOGService.stop()
+        NotificationHelper.cancelAll(this)
         finishAndRemoveTask()
     }
 

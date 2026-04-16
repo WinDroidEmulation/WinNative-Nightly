@@ -4940,6 +4940,7 @@ class SteamService :
 
                 val event = AndroidEvent.EndProcess
                 PluviaApp.events.emit(event)
+                NotificationHelper.cancelAll(applicationContext)
 
                 return START_NOT_STICKY
             }

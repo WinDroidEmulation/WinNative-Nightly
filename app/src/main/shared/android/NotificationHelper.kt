@@ -26,6 +26,13 @@ class NotificationHelper
             private const val NOTIFICATION_ID = 1
 
             const val ACTION_EXIT = BuildConfig.APPLICATION_ID + ".EXIT"
+
+            @JvmStatic
+            fun cancelAll(context: Context) {
+                val notificationManager =
+                    context.getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancelAll()
+            }
         }
 
         private val notificationManager: NotificationManager =
