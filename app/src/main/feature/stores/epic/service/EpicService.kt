@@ -753,7 +753,7 @@ class EpicService : Service() {
 
         val instance = getInstance()
         // Start as foreground service
-        val notification = notificationHelper.createForegroundNotification("Connected")
+        val notification = notificationHelper.createForegroundNotification("Epic connected")
         startForeground(1, notification)
 
         // Determine if we should sync based on the action

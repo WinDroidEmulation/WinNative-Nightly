@@ -5145,7 +5145,7 @@ class SteamService :
     }
 
     private fun reconnect() {
-        notificationHelper.notify("Retrying...")
+        notificationHelper.notify("Steam retrying...")
 
         isConnected = false
 
@@ -5277,7 +5277,7 @@ class SteamService :
                 // Tell steam we're online, this allows friends to update.
                 _steamFriends?.setPersonaState(EPersonaState.from(PrefManager.personaState) ?: EPersonaState.Online)
 
-                notificationHelper.notify("Connected")
+                notificationHelper.notify("Steam connected")
 
                 _loginResult = LoginResult.Success
             }
@@ -5300,7 +5300,7 @@ class SteamService :
 
         _isLoggedInFlow.value = false
 
-        notificationHelper.notify("Disconnected...")
+        notificationHelper.notify("Steam disconnected")
 
         if (isLoggingOut || callback.result == EResult.LogonSessionReplaced) {
             // logOut() already handled cleanup; just stop the service.
