@@ -8,6 +8,7 @@ import com.winlator.cmod.feature.stores.steam.enums.SaveLocation
 import com.winlator.cmod.feature.stores.steam.enums.SyncResult
 import com.winlator.cmod.feature.stores.steam.service.SteamService
 import com.winlator.cmod.feature.stores.steam.utils.PrefManager
+import com.winlator.cmod.feature.sync.google.GameSaveBackupManager
 import com.winlator.cmod.runtime.container.Shortcut
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
@@ -60,7 +61,14 @@ object CloudSyncHelper {
         shortcut: Shortcut,
     ): Boolean {
         val appId = shortcut.getExtra("app_id").toIntOrNull() ?: return false
-        return try {
+        return forceSteamDownloadById(context, appId)
+    }
+
+    private suspend fun forceSteamDownloadById(
+        context: Context,
+        appId: Int,
+    ): Boolean =
+        try {
             val accountId =
                 SteamService.userSteamId?.accountID?.toLong()
                     ?: PrefManager.steamUserAccountId.takeIf { it != 0 }?.toLong()
@@ -83,13 +91,20 @@ object CloudSyncHelper {
             Timber.e(e, "Failed to force Steam cloud download for appId=%d", appId)
             false
         }
-    }
 
     private suspend fun forceGogDownload(
         context: Context,
         shortcut: Shortcut,
     ): Boolean {
         val rawAppId = shortcut.getExtra("app_id").ifEmpty { shortcut.getExtra("gog_id") }
+        if (rawAppId.isEmpty()) return false
+        return forceGogDownloadById(context, rawAppId)
+    }
+
+    private suspend fun forceGogDownloadById(
+        context: Context,
+        rawAppId: String,
+    ): Boolean {
         if (rawAppId.isEmpty()) return false
         val appId = if (rawAppId.startsWith("GOG_", ignoreCase = true)) rawAppId else "GOG_$rawAppId"
         return try {
@@ -105,13 +120,19 @@ object CloudSyncHelper {
         shortcut: Shortcut,
     ): Boolean {
         val appId = shortcut.getExtra("app_id").toIntOrNull() ?: return false
-        return try {
+        return forceEpicDownloadById(context, appId)
+    }
+
+    private suspend fun forceEpicDownloadById(
+        context: Context,
+        appId: Int,
+    ): Boolean =
+        try {
             EpicCloudSavesManager.syncCloudSaves(context, appId, "download")
         } catch (e: Exception) {
             Timber.e(e, "Failed to force Epic cloud download for appId=%d", appId)
             false
         }
-    }
 
     /**
      * Checks whether the given shortcut belongs to a supported store (Steam, Epic, GOG).
@@ -312,5 +333,47 @@ object CloudSyncHelper {
             result,
         )
         return result
+    }
+
+    /**
+     * Download cloud saves for a game without requiring a container shortcut.
+     * Useful from the Cloud Saves screen when the user hasn't launched or pinned
+     * the game yet (so no shortcut exists), but still wants to pull saves down.
+     */
+    @JvmStatic
+    fun downloadCloudSaves(
+        context: Context,
+        source: GameSaveBackupManager.GameSource,
+        gameId: String,
+    ): Boolean {
+        val result =
+            runBlocking {
+                when (source) {
+                    GameSaveBackupManager.GameSource.STEAM -> {
+                        val appId = gameId.toIntOrNull() ?: return@runBlocking false
+                        forceSteamDownloadById(context, appId)
+                    }
+                    GameSaveBackupManager.GameSource.EPIC -> {
+                        val appId = gameId.toIntOrNull() ?: return@runBlocking false
+                        forceEpicDownloadById(context, appId)
+                    }
+                    GameSaveBackupManager.GameSource.GOG -> forceGogDownloadById(context, gameId)
+                }
+            }
+        if (result) {
+            markCloudSaveSyncedById(context, source, gameId)
+        }
+        Timber.i("Cloud save download for %s/%s: %s", source, gameId, result)
+        return result
+    }
+
+    private fun markCloudSaveSyncedById(
+        context: Context,
+        source: GameSaveBackupManager.GameSource,
+        gameId: String,
+    ) {
+        if (gameId.isEmpty()) return
+        val prefs = context.getSharedPreferences("cloud_sync_state", Context.MODE_PRIVATE)
+        prefs.edit().putLong("synced_${source.name}_$gameId", System.currentTimeMillis()).apply()
     }
 }

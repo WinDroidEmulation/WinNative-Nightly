@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -40,30 +43,42 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.winlator.cmod.R
+import com.winlator.cmod.feature.sync.google.GameSaveBackupManager
 
 data class CloudSyncConflictTimestamps(
     val localTimestampLabel: String,
     val cloudTimestampLabel: String,
 )
 
+/**
+ * Callback for the cloud-save conflict dialog. [keepBackup] reflects whether the
+ * user wanted the replaced side archived into Save History before the overwrite.
+ */
+fun interface CloudSyncConflictChoice {
+    fun onChoice(keepBackup: Boolean)
+}
+
 object CloudSyncConflictDialog {
     @JvmStatic
     fun show(
         activity: Activity,
         timestamps: CloudSyncConflictTimestamps,
-        onUseCloud: Runnable,
-        onUseLocal: Runnable,
+        onUseCloud: CloudSyncConflictChoice,
+        onUseLocal: CloudSyncConflictChoice,
     ) {
         val dialog =
             Dialog(activity, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar).apply {
@@ -103,13 +118,17 @@ object CloudSyncConflictDialog {
                     ) {
                         CloudSyncConflictDialogContent(
                             timestamps = timestamps,
-                            onUseCloud = {
-                                dialog.dismiss()
-                                onUseCloud.run()
+                            initialKeepBackup = GameSaveBackupManager.isKeepReplacedBackupEnabled(activity),
+                            onKeepBackupChanged = { enabled ->
+                                GameSaveBackupManager.setKeepReplacedBackupEnabled(activity, enabled)
                             },
-                            onUseLocal = {
+                            onUseCloud = { keepBackup ->
                                 dialog.dismiss()
-                                onUseLocal.run()
+                                onUseCloud.onChoice(keepBackup)
+                            },
+                            onUseLocal = { keepBackup ->
+                                dialog.dismiss()
+                                onUseLocal.onChoice(keepBackup)
                             },
                         )
                     }
@@ -132,12 +151,15 @@ object CloudSyncConflictDialog {
 @Composable
 private fun CloudSyncConflictDialogContent(
     timestamps: CloudSyncConflictTimestamps,
-    onUseCloud: () -> Unit,
-    onUseLocal: () -> Unit,
+    initialKeepBackup: Boolean,
+    onKeepBackupChanged: (Boolean) -> Unit,
+    onUseCloud: (keepBackup: Boolean) -> Unit,
+    onUseLocal: (keepBackup: Boolean) -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
     val scrollState = rememberScrollState()
+    var keepBackup by remember { mutableStateOf(initialKeepBackup) }
 
     Surface(
         modifier =
@@ -237,6 +259,14 @@ private fun CloudSyncConflictDialogContent(
                                 )
                             }
                         }
+
+                        KeepBackupCheckbox(
+                            checked = keepBackup,
+                            onCheckedChange = { v ->
+                                keepBackup = v
+                                onKeepBackupChanged(v)
+                            },
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -247,7 +277,7 @@ private fun CloudSyncConflictDialogContent(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             OutlinedButton(
-                                onClick = onUseLocal,
+                                onClick = { onUseLocal(keepBackup) },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors =
                                     ButtonDefaults.outlinedButtonColors(
@@ -258,7 +288,7 @@ private fun CloudSyncConflictDialogContent(
                                 Text("Keep Local")
                             }
                             Button(
-                                onClick = onUseCloud,
+                                onClick = { onUseCloud(keepBackup) },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors =
                                     ButtonDefaults.buttonColors(
@@ -275,7 +305,7 @@ private fun CloudSyncConflictDialogContent(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             OutlinedButton(
-                                onClick = onUseLocal,
+                                onClick = { onUseLocal(keepBackup) },
                                 modifier = Modifier.weight(1f),
                                 colors =
                                     ButtonDefaults.outlinedButtonColors(
@@ -286,7 +316,7 @@ private fun CloudSyncConflictDialogContent(
                                 Text("Keep Local")
                             }
                             Button(
-                                onClick = onUseCloud,
+                                onClick = { onUseCloud(keepBackup) },
                                 modifier = Modifier.weight(1f),
                                 colors =
                                     ButtonDefaults.buttonColors(
@@ -299,6 +329,55 @@ private fun CloudSyncConflictDialogContent(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KeepBackupCheckbox(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable { onCheckedChange(!checked) },
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF121922),
+        border = BorderStroke(1.dp, Color(0xFF233141)),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors =
+                    CheckboxDefaults.colors(
+                        checkedColor = Color(0xFF57CBDE),
+                        uncheckedColor = Color(0xFF5F7388),
+                        checkmarkColor = Color(0xFF0E141B),
+                    ),
+            )
+            Spacer(Modifier.widthIn(min = 6.dp))
+            Column(modifier = Modifier.padding(start = 4.dp)) {
+                Text(
+                    text = stringResource(R.string.cloud_saves_keep_replaced_backup),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = stringResource(R.string.cloud_saves_keep_replaced_backup_summary),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                )
             }
         }
     }

@@ -974,6 +974,29 @@ Installed path:
     <string name="cloud_saves_backing_up">Backing up cloud save\u2026</string>
     <string name="cloud_saves_restoring">Restoring cloud save\u2026</string>
 
+    <!-- Cloud Saves > Provider sync & backup history -->
+    <string name="cloud_saves_sync_from_provider">Sync from %1$s Cloud</string>
+    <string name="cloud_saves_sync_from_provider_generic">Sync from Cloud</string>
+    <string name="cloud_saves_syncing_from_provider">Downloading save from %1$s\u2026</string>
+    <string name="cloud_saves_sync_from_provider_success">%1$s cloud save downloaded.</string>
+    <string name="cloud_saves_sync_from_provider_failed">Could not download save from %1$s.</string>
+    <string name="cloud_saves_history_title">Save History</string>
+    <string name="cloud_saves_history_empty">No previous saves backed up yet. Replaced saves and manual backups will appear here for 30 days.</string>
+    <string name="cloud_saves_history_loading">Loading save history\u2026</string>
+    <string name="cloud_saves_history_sign_in">Sign in to Google to view your save history.</string>
+    <string name="cloud_saves_history_origin_local">local</string>
+    <string name="cloud_saves_history_origin_cloud">cloud</string>
+    <string name="cloud_saves_history_origin_manual">manual</string>
+    <string name="cloud_saves_history_origin_auto">auto</string>
+    <string name="cloud_saves_history_restore">Restore</string>
+    <string name="cloud_saves_history_restore_confirm_title">Restore this backup?</string>
+    <string name="cloud_saves_history_restore_confirm_body">This will replace your current local save with the backup from %1$s. Your current local save can be preserved as a new history entry.</string>
+    <string name="cloud_saves_history_restore_success">Save restored from backup.</string>
+    <string name="cloud_saves_history_restore_failed">Could not restore this backup.</string>
+    <string name="cloud_saves_keep_replaced_backup">Keep a backup of the replaced save</string>
+    <string name="cloud_saves_keep_replaced_backup_summary">If you change your mind, you can restore it from Save History.</string>
+    <string name="cloud_saves_history_refresh">Refresh</string>
+
     <!-- Saves > Import and Export -->
     <string name="saves_import_export_title">Saves</string>
     <string name="saves_import_export_confirm_selection">Confirm Selection</string>

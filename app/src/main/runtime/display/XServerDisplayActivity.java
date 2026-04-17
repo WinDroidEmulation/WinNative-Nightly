@@ -1188,17 +1188,20 @@ public class XServerDisplayActivity extends AppCompatActivity {
                                 // Cloud differs from local — ask the user what to do
                                 final CountDownLatch dialogLatch = new CountDownLatch(1);
                                 final boolean[] useCloud = {false};
+                                final boolean[] keepBackup = {false};
                                 final CloudSyncConflictTimestamps timestamps = CloudSyncHelper.getConflictTimestamps(this, shortcut);
                                 runOnUiThread(() -> {
                                     CloudSyncConflictDialog.show(
                                         XServerDisplayActivity.this,
                                         timestamps,
-                                        () -> {
+                                        (boolean keep) -> {
                                             useCloud[0] = true;
+                                            keepBackup[0] = keep;
                                             dialogLatch.countDown();
                                         },
-                                        () -> {
+                                        (boolean keep) -> {
                                             useCloud[0] = false;
+                                            keepBackup[0] = keep;
                                             dialogLatch.countDown();
                                         }
                                     );
@@ -1208,10 +1211,21 @@ public class XServerDisplayActivity extends AppCompatActivity {
                                 } catch (InterruptedException ignored) {}
 
                                 if (useCloud[0]) {
+                                    // Archive the local save that's about to be overwritten
+                                    if (keepBackup[0]) {
+                                        try {
+                                            backupDiscardedSaveForShortcut(shortcut,
+                                                com.winlator.cmod.feature.sync.google.GameSaveBackupManager.BackupOrigin.LOCAL);
+                                        } catch (Throwable t) {
+                                            android.util.Log.w("CloudSync", "Pre-overwrite local backup failed", t);
+                                        }
+                                    }
                                     showLaunchPreloader(getString(R.string.preloader_syncing_cloud));
                                     CloudSyncHelper.downloadCloudSaves(this, shortcut);
                                     showLaunchPreloader(getString(R.string.preloader_initializing));
                                 }
+                                // Keep Local: cloud version is about to be overwritten on next exit.
+                                // Capturing it would require a separate provider download — deferred for now.
                             }
                         }
                     }
@@ -1957,6 +1971,53 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     private boolean isCloudSyncEnabledForShortcut() {
         return shortcut == null || !"1".equals(shortcut.getExtra("cloud_sync_disabled", "0"));
+    }
+
+    /**
+     * Synchronously zip the current local save and upload it to the game's Save History folder.
+     * Called when the user is about to overwrite local with a cloud version and opted in to
+     * keeping a backup of the replaced side.
+     */
+    private void backupDiscardedSaveForShortcut(
+        com.winlator.cmod.runtime.container.Shortcut shortcut,
+        com.winlator.cmod.feature.sync.google.GameSaveBackupManager.BackupOrigin origin
+    ) {
+        if (shortcut == null) return;
+        String gameSource = shortcut.getExtra("game_source");
+        String gameId;
+        com.winlator.cmod.feature.sync.google.GameSaveBackupManager.GameSource source;
+        if ("STEAM".equals(gameSource)) {
+            gameId = shortcut.getExtra("app_id");
+            source = com.winlator.cmod.feature.sync.google.GameSaveBackupManager.GameSource.STEAM;
+        } else if ("EPIC".equals(gameSource)) {
+            gameId = shortcut.getExtra("app_id");
+            source = com.winlator.cmod.feature.sync.google.GameSaveBackupManager.GameSource.EPIC;
+        } else if ("GOG".equals(gameSource)) {
+            gameId = shortcut.getExtra("gog_id");
+            source = com.winlator.cmod.feature.sync.google.GameSaveBackupManager.GameSource.GOG;
+        } else {
+            return;
+        }
+        if (gameId == null || gameId.isEmpty()) return;
+
+        String gameName = shortcut.name != null ? shortcut.name : "Unknown";
+        final String gameIdFinal = gameId;
+        final com.winlator.cmod.feature.sync.google.GameSaveBackupManager.GameSource sourceFinal = source;
+        final String gameNameFinal = gameName;
+
+        try {
+            com.winlator.cmod.feature.sync.google.GameSaveBackupManager.BackupResult result =
+                (com.winlator.cmod.feature.sync.google.GameSaveBackupManager.BackupResult) kotlinx.coroutines.BuildersKt.runBlocking(
+                    kotlinx.coroutines.Dispatchers.getIO(),
+                    (scope, continuation) ->
+                        com.winlator.cmod.feature.sync.google.GameSaveBackupManager.INSTANCE.backupDiscardedSave(
+                            this, sourceFinal, gameIdFinal, gameNameFinal, origin, continuation
+                        )
+                );
+            android.util.Log.i("CloudSync", "Discarded save backup: " + result.getMessage());
+        } catch (Exception e) {
+            android.util.Log.w("CloudSync", "Failed to back up discarded save", e);
+        }
     }
 
     /**
