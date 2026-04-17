@@ -176,8 +176,6 @@ static void preload_vendor_icd_deps() {
   // be visible in a preceding RTLD_GLOBAL library or the dlopen fails with
   // "cannot locate symbol BIO_flush", and vkCreateInstance returns -9.
   const char *candidates[] = {
-      "/apex/com.android.conscrypt/lib64/libcrypto.so",
-      "/system/lib64/libcrypto.so",
       "libcrypto.so",
       NULL,
   };

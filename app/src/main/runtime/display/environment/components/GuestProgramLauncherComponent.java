@@ -769,7 +769,10 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         }) {
       if (new File(cryptoCandidate).exists()) {
         if (!ld_preload.isEmpty()) ld_preload = ld_preload + ":";
-        ld_preload = ld_preload + cryptoCandidate;
+        // Absolute /apex and /system entries are rejected from the app's linker
+        // namespace when used via LD_PRELOAD. Use the soname instead so the
+        // child resolves libcrypto through its normal library search path.
+        ld_preload = ld_preload + "libcrypto.so";
         break;
       }
     }
