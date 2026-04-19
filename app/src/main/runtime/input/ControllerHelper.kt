@@ -8,6 +8,10 @@ object ControllerHelper {
         val deviceIds = InputDevice.getDeviceIds()
         for (deviceId in deviceIds) {
             val device = InputDevice.getDevice(deviceId) ?: continue
+            val name = device.name?.lowercase() ?: ""
+            if (name.contains("uinput-fpc") || name.contains("goodix_fp") || name.contains("uinput-")) {
+                continue
+            }
             val sources = device.sources
             if (!device.isVirtual &&
                 (

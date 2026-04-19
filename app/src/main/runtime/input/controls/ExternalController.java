@@ -446,6 +446,13 @@ public class ExternalController {
     if (device == null) {
       return false;
     }
+    String name = device.getName();
+    if (name != null) {
+      String lowerName = name.toLowerCase();
+      if (lowerName.contains("uinput-fpc") || lowerName.contains("goodix_fp") || lowerName.contains("uinput-")) {
+        return false;
+      }
+    }
     int sources = device.getSources();
     if (device.isVirtual()) {
       return false;
