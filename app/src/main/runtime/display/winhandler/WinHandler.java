@@ -1242,16 +1242,23 @@ public class WinHandler {
   }
 
   private ExternalController getPreferredGyroController() {
-    if (this.currentController == null) {
-      // Try to find any connected game controller if none is active
-      ArrayList<ExternalController> controllers = ExternalController.getControllers();
-      if (!controllers.isEmpty()) return controllers.get(0);
-      return null;
+    if (this.currentController != null) {
+      int deviceId = this.currentController.getDeviceId();
+      return deviceId >= 0 && android.view.InputDevice.getDevice(deviceId) != null
+          ? this.currentController
+          : null;
     }
-    int deviceId = this.currentController.getDeviceId();
-    return deviceId >= 0 && android.view.InputDevice.getDevice(deviceId) != null
-        ? this.currentController
-        : null;
+    
+    // Fallback: Use the first tracked controller that is still connected
+    if (!this.controllers.isEmpty()) {
+        for (ExternalController controller : this.controllers.values()) {
+            int deviceId = controller.getDeviceId();
+            if (deviceId >= 0 && android.view.InputDevice.getDevice(deviceId) != null) {
+                return controller;
+            }
+        }
+    }
+    return null;
   }
 
   private boolean canUseVirtualGamepad() {
