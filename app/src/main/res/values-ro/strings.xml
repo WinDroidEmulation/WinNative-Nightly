@@ -102,6 +102,12 @@
     <string name="common_ui_application">Aplicație</string>
     <string name="common_ui_check">Verifică</string>
     <string name="common_ui_select">Selectează</string>
+    <string name="common_ui_select_folder">Selectează folder</string>
+    <string name="common_ui_current_folder">Folder curent</string>
+    <string name="common_ui_storage_roots">Locații de stocare</string>
+    <string name="common_ui_browse_local_folders_directly">Răsfoiește direct folderele locale</string>
+    <string name="common_ui_no_folders_available_here">Niciun folder disponibil aici</string>
+    <string name="common_ui_grant_all_files_access_browse">Acordă acces complet la fișiere pentru a răsfoi direct folderele locale.</string>
     <string name="common_ui_not_configured">Neconfigurat</string>
     <string name="common_ui_reinstall">Reinstalează</string>
     <string name="common_ui_exit_app_confirm">Iesi din WinNative?</string>
@@ -110,6 +116,16 @@
     <string name="common_ui_enabled">Activat</string>
     <string name="common_ui_unknown_error">Eroare necunoscuta</string>
     <string name="common_ui_proceed">Continua</string>
+    <string name="common_ui_sign_out">Deconectare</string>
+    <string name="common_ui_name_cannot_be_empty">Numele nu poate fi gol</string>
+    <string name="common_ui_error_with_message">Eroare: %1$s</string>
+    <string name="common_ui_64_bit">64 de biți</string>
+    <string name="common_ui_32_bit">32 de biți</string>
+    <string name="common_ui_64_bit_and_32_bit">64 de biți și 32 de biți</string>
+    <plurals name="common_ui_folder_count">
+        <item quantity="one">%d folder</item>
+        <item quantity="other">%d foldere</item>
+    </plurals>
 
     <!-- Library > Games -->
     <string name="library_games_shortcut_created">Comanda rapida creata</string>
@@ -152,9 +168,21 @@
     <string name="stores_accounts_steam_integration_title">Steam</string>
     <string name="stores_accounts_shared_downloads_folder">Folder de descarcari partajat</string>
     <string name="stores_accounts_shared_downloads_subtitle">Foloseste un singur folder pentru toate magazinele</string>
+    <string name="stores_accounts_default_downloads_folder">Folder implicit pentru descărcări</string>
+    <string name="stores_accounts_steam_downloads">Descărcări Steam</string>
+    <string name="stores_accounts_epic_downloads">Descărcări Epic</string>
+    <string name="stores_accounts_gog_downloads">Descărcări GOG</string>
     <string name="stores_accounts_download_speed">Viteza de descarcare</string>
     <string name="stores_accounts_download_speed_subtitle">Controleaza concurenta firelor de descarcare Steam</string>
     <string name="stores_accounts_download_server">Server de descarcare</string>
+    <string name="stores_accounts_connected_stores">Magazine conectate</string>
+    <string name="stores_accounts_download_settings">Setări descărcare</string>
+    <string name="stores_accounts_download_speed_conservative">Conservator</string>
+    <string name="stores_accounts_download_speed_balanced">Echilibrat</string>
+    <string name="stores_accounts_download_speed_standard">Standard</string>
+    <string name="stores_accounts_download_speed_performance">Performanță</string>
+    <string name="stores_accounts_download_server_auto_detected">Detectat automat: %1$s</string>
+    <string name="stores_accounts_download_server_subtitle">Regiunea CDN Steam pentru descărcarea jocurilor</string>
     <string name="stores_accounts_sign_out_confirm">Te deconectezi de la %1$s?</string>
     <string name="stores_accounts_sign_out_message">Va trebui sa te autentifici din nou pentru a accesa biblioteca.</string>
     <string name="stores_accounts_logged_in_epic">Autentificat in Epic Games!</string>
@@ -283,6 +311,7 @@
     <string name="container_config_total">Total</string>
     <string name="container_config_clear_cache">Goleste cache-ul</string>
     <string name="container_config_estimated_used_space">Spatiu estimat utilizat</string>
+    <string name="settings_containers_error_saving_wallpaper">Eroare la salvarea imaginii de fundal</string>
     <string name="container_config_directinput_mapper_type">Tip mapper DirectInput</string>
     <string name="container_config_title">Configurare</string>
     <string name="container_config_startup_selection">Selectie la pornire</string>
@@ -326,6 +355,8 @@
     <string name="container_wine_mouse_warp_override">Suprascriere warp mouse</string>
     <string name="container_wine_directx">DirectX</string>
     <string name="container_wine_dxvk_version">Versiune DXVK</string>
+    <string name="container_wine_dxvk_config_title">Configurare DXVK</string>
+    <string name="container_wine_wined3d_config_title">Configurare WineD3D</string>
     <string name="container_wine_vkd3d_version">Versiune VKD3D</string>
     <string name="container_wine_version">Versiune Wine</string>
     <string name="container_wine_dxwrapper_help_content">
@@ -344,6 +375,8 @@
 
     <!-- Container > Box64 -->
     <string name="container_box64_title">Box64</string>
+    <string name="container_box64_wowbox64_title">Box64 / Wowbox64</string>
+    <string name="container_wowbox64_title">Wowbox64</string>
     <string name="container_box64_preset">Preset Box64</string>
     <string name="container_box64_version">Versiune Box64</string>
     <string name="container_box64_stability">Stabilitate</string>
@@ -439,6 +472,7 @@
     <string name="container_graphics_configuration">Configurare driver grafic</string>
     <string name="container_graphics_version">Versiune driver grafic</string>
     <string name="container_graphics_available_extensions">Extensii disponibile</string>
+    <string name="container_graphics_extensions_enabled_summary">%1$d / %2$d activate</string>
     <string name="container_graphics_max_device_memory">Memorie maxima dispozitiv</string>
     <string name="container_graphics_sync_frame">Sincronizeaza fiecare cadru</string>
     <string name="container_graphics_disable_present_wait">Dezactiveaza KHR_present_wait</string>
@@ -667,6 +701,9 @@ De ex. <b>META</b> pentru <i>tasta META</i>, \n
     <string name="settings_general_cursor_speed">Viteza cursorului</string>
     <string name="settings_general_theme">Tema</string>
     <string name="settings_general_background">Fundal</string>
+    <string name="settings_general_background_color_hex">Culoare (hex)</string>
+    <string name="settings_general_wallpaper_selected">Fundal selectat</string>
+    <string name="settings_general_select_wallpaper">Selectează fundalul</string>
     <string name="settings_general_title">General</string>
     <string name="settings_general_enable_file_provider">Activeaza furnizorul de fisiere</string>
     <string name="settings_general_take_effect_next_startup">Aceasta optiune va avea efect la urmatoarea pornire.</string>

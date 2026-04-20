@@ -127,6 +127,10 @@ class ShortcutSettingsComposeDialog private constructor(
         }
 
     init {
+        state.wined3dCsmtEntries.value =
+            listOf(context.getString(R.string.common_ui_enabled), context.getString(R.string.common_ui_disabled))
+        state.wined3dStrictShaderMathEntries.value =
+            listOf(context.getString(R.string.common_ui_enabled), context.getString(R.string.common_ui_disabled))
         dialog = Dialog(activity, R.style.ContentDialog).apply {
             requestWindowFeature(Window.FEATURE_NO_TITLE)
             setCancelable(true)

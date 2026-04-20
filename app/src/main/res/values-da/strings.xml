@@ -102,6 +102,12 @@
     <string name="common_ui_application">Applikation</string>
     <string name="common_ui_check">Tjek</string>
     <string name="common_ui_select">Vælg</string>
+    <string name="common_ui_select_folder">Vælg mappe</string>
+    <string name="common_ui_current_folder">Nuværende mappe</string>
+    <string name="common_ui_storage_roots">Lagringsrødder</string>
+    <string name="common_ui_browse_local_folders_directly">Gennemse lokale mapper direkte</string>
+    <string name="common_ui_no_folders_available_here">Ingen mapper tilgængelige her</string>
+    <string name="common_ui_grant_all_files_access_browse">Giv fuld filadgang for at gennemse lokale mapper direkte.</string>
     <string name="common_ui_not_configured">Ikke konfigureret</string>
     <string name="common_ui_reinstall">Geninstaller</string>
     <string name="common_ui_exit_app_confirm">Afslut WinNative?</string>
@@ -110,6 +116,16 @@
     <string name="common_ui_enabled">Aktiveret</string>
     <string name="common_ui_unknown_error">Ukendt fejl</string>
     <string name="common_ui_proceed">Fortsæt</string>
+    <string name="common_ui_sign_out">Log ud</string>
+    <string name="common_ui_name_cannot_be_empty">Navn må ikke være tomt</string>
+    <string name="common_ui_error_with_message">Fejl: %1$s</string>
+    <string name="common_ui_64_bit">64-bit</string>
+    <string name="common_ui_32_bit">32-bit</string>
+    <string name="common_ui_64_bit_and_32_bit">64-bit og 32-bit</string>
+    <plurals name="common_ui_folder_count">
+        <item quantity="one">%d mappe</item>
+        <item quantity="other">%d mapper</item>
+    </plurals>
 
     <!-- Library > Games -->
     <string name="library_games_shortcut_created">Genvej oprettet</string>
@@ -152,9 +168,21 @@
     <string name="stores_accounts_steam_integration_title">Steam</string>
     <string name="stores_accounts_shared_downloads_folder">Delt downloadmappe</string>
     <string name="stores_accounts_shared_downloads_subtitle">Brug en enkelt mappe på tværs af alle butikker</string>
+    <string name="stores_accounts_default_downloads_folder">Standard downloadmappe</string>
+    <string name="stores_accounts_steam_downloads">Steam-downloads</string>
+    <string name="stores_accounts_epic_downloads">Epic-downloads</string>
+    <string name="stores_accounts_gog_downloads">GOG-downloads</string>
     <string name="stores_accounts_download_speed">Downloadhastighed</string>
     <string name="stores_accounts_download_speed_subtitle">Styrer Steam download-trådsamtidighed</string>
     <string name="stores_accounts_download_server">Downloadserver</string>
+    <string name="stores_accounts_connected_stores">Forbundne butikker</string>
+    <string name="stores_accounts_download_settings">Downloadindstillinger</string>
+    <string name="stores_accounts_download_speed_conservative">Konservativ</string>
+    <string name="stores_accounts_download_speed_balanced">Balanceret</string>
+    <string name="stores_accounts_download_speed_standard">Standard</string>
+    <string name="stores_accounts_download_speed_performance">Ydeevne</string>
+    <string name="stores_accounts_download_server_auto_detected">Automatisk registreret: %1$s</string>
+    <string name="stores_accounts_download_server_subtitle">Steam CDN-region til spildownloads</string>
     <string name="stores_accounts_sign_out_confirm">Log ud af %1$s?</string>
     <string name="stores_accounts_sign_out_message">Du skal logge ind igen for at få adgang til dit bibliotek.</string>
     <string name="stores_accounts_logged_in_epic">Logget ind på Epic Games!</string>
@@ -283,6 +311,7 @@
     <string name="container_config_total">Total</string>
     <string name="container_config_clear_cache">Ryd cache</string>
     <string name="container_config_estimated_used_space">Estimeret brugt plads</string>
+    <string name="settings_containers_error_saving_wallpaper">Fejl ved gemning af baggrundsbillede</string>
     <string name="container_config_directinput_mapper_type">DirectInput Mapper-type</string>
     <string name="container_config_title">Konfiguration</string>
     <string name="container_config_startup_selection">Opstartsvalg</string>
@@ -326,6 +355,8 @@
     <string name="container_wine_mouse_warp_override">Mouse Warp-tilsidesættelse</string>
     <string name="container_wine_directx">DirectX</string>
     <string name="container_wine_dxvk_version">DXVK-version</string>
+    <string name="container_wine_dxvk_config_title">DXVK-konfiguration</string>
+    <string name="container_wine_wined3d_config_title">WineD3D-konfiguration</string>
     <string name="container_wine_vkd3d_version">VKD3D-version</string>
     <string name="container_wine_version">Wine-version</string>
     <string name="container_wine_dxwrapper_help_content">
@@ -344,6 +375,8 @@
 
     <!-- Container > Box64 -->
     <string name="container_box64_title">Box64</string>
+    <string name="container_box64_wowbox64_title">Box64 / Wowbox64</string>
+    <string name="container_wowbox64_title">Wowbox64</string>
     <string name="container_box64_preset">Box64-forudindstilling</string>
     <string name="container_box64_version">Box64-version</string>
     <string name="container_box64_stability">Stabilitet</string>
@@ -439,6 +472,7 @@
     <string name="container_graphics_configuration">Grafikdriver-konfiguration</string>
     <string name="container_graphics_version">Grafikdriver-version</string>
     <string name="container_graphics_available_extensions">Tilgængelige udvidelser</string>
+    <string name="container_graphics_extensions_enabled_summary">%1$d / %2$d aktiveret</string>
     <string name="container_graphics_max_device_memory">Maks enhedshukommelse</string>
     <string name="container_graphics_sync_frame">Synkroniser hver frame</string>
     <string name="container_graphics_disable_present_wait">Deaktiver KHR_present_wait</string>
@@ -667,6 +701,9 @@ F.eks. <b>META</b> for <i>META-tast</i>, \n
     <string name="settings_general_cursor_speed">Markørhastighed</string>
     <string name="settings_general_theme">Tema</string>
     <string name="settings_general_background">Baggrund</string>
+    <string name="settings_general_background_color_hex">Farve (hex)</string>
+    <string name="settings_general_wallpaper_selected">Baggrundsbillede valgt</string>
+    <string name="settings_general_select_wallpaper">Vælg baggrundsbillede</string>
     <string name="settings_general_title">Generelt</string>
     <string name="settings_general_enable_file_provider">Aktiver filudbyder</string>
     <string name="settings_general_take_effect_next_startup">Denne indstilling træder i kraft ved næste opstart.</string>

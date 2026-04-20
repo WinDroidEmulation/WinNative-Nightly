@@ -102,6 +102,12 @@
     <string name="common_ui_application">Застосунок</string>
     <string name="common_ui_check">Перевірити</string>
     <string name="common_ui_select">Вибрати</string>
+    <string name="common_ui_select_folder">Вибрати теку</string>
+    <string name="common_ui_current_folder">Поточна тека</string>
+    <string name="common_ui_storage_roots">Сховища</string>
+    <string name="common_ui_browse_local_folders_directly">Переглядати локальні теки безпосередньо</string>
+    <string name="common_ui_no_folders_available_here">Тут немає доступних тек</string>
+    <string name="common_ui_grant_all_files_access_browse">Надайте повний доступ до файлів, щоб безпосередньо переглядати локальні теки.</string>
     <string name="common_ui_not_configured">Не налаштовано</string>
     <string name="common_ui_reinstall">Перевстановити</string>
     <string name="common_ui_exit_app_confirm">Вийти з WinNative?</string>
@@ -110,6 +116,18 @@
     <string name="common_ui_enabled">Увімкнено</string>
     <string name="common_ui_unknown_error">Невідома помилка</string>
     <string name="common_ui_proceed">Продовжити</string>
+    <string name="common_ui_sign_out">Вийти</string>
+    <string name="common_ui_name_cannot_be_empty">Назва не може бути порожньою</string>
+    <string name="common_ui_error_with_message">Помилка: %1$s</string>
+    <string name="common_ui_64_bit">64-біт</string>
+    <string name="common_ui_32_bit">32-біт</string>
+    <string name="common_ui_64_bit_and_32_bit">64-біт і 32-біт</string>
+    <plurals name="common_ui_folder_count">
+        <item quantity="one">%d тека</item>
+        <item quantity="few">%d теки</item>
+        <item quantity="many">%d тек</item>
+        <item quantity="other">%d теки</item>
+    </plurals>
 
     <!-- Library > Games -->
     <string name="library_games_shortcut_created">Ярлик створено</string>
@@ -152,9 +170,21 @@
     <string name="stores_accounts_steam_integration_title">Steam</string>
     <string name="stores_accounts_shared_downloads_folder">Спільна тека завантажень</string>
     <string name="stores_accounts_shared_downloads_subtitle">Використовувати одну теку для всіх магазинів</string>
+    <string name="stores_accounts_default_downloads_folder">Типова тека завантажень</string>
+    <string name="stores_accounts_steam_downloads">Завантаження Steam</string>
+    <string name="stores_accounts_epic_downloads">Завантаження Epic</string>
+    <string name="stores_accounts_gog_downloads">Завантаження GOG</string>
     <string name="stores_accounts_download_speed">Швидкість завантаження</string>
     <string name="stores_accounts_download_speed_subtitle">Контролює кількість потоків завантаження Steam</string>
     <string name="stores_accounts_download_server">Сервер завантажень</string>
+    <string name="stores_accounts_connected_stores">Підключені магазини</string>
+    <string name="stores_accounts_download_settings">Налаштування завантаження</string>
+    <string name="stores_accounts_download_speed_conservative">Обережний</string>
+    <string name="stores_accounts_download_speed_balanced">Збалансований</string>
+    <string name="stores_accounts_download_speed_standard">Стандартний</string>
+    <string name="stores_accounts_download_speed_performance">Продуктивність</string>
+    <string name="stores_accounts_download_server_auto_detected">Визначено автоматично: %1$s</string>
+    <string name="stores_accounts_download_server_subtitle">Регіон Steam CDN для завантаження ігор</string>
     <string name="stores_accounts_sign_out_confirm">Вийти з %1$s?</string>
     <string name="stores_accounts_sign_out_message">Вам потрібно буде увійти знову, щоб отримати доступ до бібліотеки.</string>
     <string name="stores_accounts_logged_in_epic">Авторизовано в Epic Games!</string>
@@ -283,6 +313,7 @@
     <string name="container_config_total">Загалом</string>
     <string name="container_config_clear_cache">Очистити кеш</string>
     <string name="container_config_estimated_used_space">Приблизний використаний простір</string>
+    <string name="settings_containers_error_saving_wallpaper">Помилка під час збереження шпалер</string>
     <string name="container_config_directinput_mapper_type">Тип маппера DirectInput</string>
     <string name="container_config_title">Конфігурація</string>
     <string name="container_config_startup_selection">Вибір при запуску</string>
@@ -326,6 +357,8 @@
     <string name="container_wine_mouse_warp_override">Перевизначення переміщення миші</string>
     <string name="container_wine_directx">DirectX</string>
     <string name="container_wine_dxvk_version">Версія DXVK</string>
+    <string name="container_wine_dxvk_config_title">Налаштування DXVK</string>
+    <string name="container_wine_wined3d_config_title">Налаштування WineD3D</string>
     <string name="container_wine_vkd3d_version">Версія VKD3D</string>
     <string name="container_wine_version">Версія Wine</string>
     <string name="container_wine_dxwrapper_help_content">
@@ -344,6 +377,8 @@
 
     <!-- Container > Box64 -->
     <string name="container_box64_title">Box64</string>
+    <string name="container_box64_wowbox64_title">Box64 / Wowbox64</string>
+    <string name="container_wowbox64_title">Wowbox64</string>
     <string name="container_box64_preset">Пресет Box64</string>
     <string name="container_box64_version">Версія Box64</string>
     <string name="container_box64_stability">Стабільність</string>
@@ -439,6 +474,7 @@
     <string name="container_graphics_configuration">Конфігурація графічного драйвера</string>
     <string name="container_graphics_version">Версія графічного драйвера</string>
     <string name="container_graphics_available_extensions">Доступні розширення</string>
+    <string name="container_graphics_extensions_enabled_summary">%1$d / %2$d увімкнено</string>
     <string name="container_graphics_max_device_memory">Максимальна пам\'ять пристрою</string>
     <string name="container_graphics_sync_frame">Синхронізувати кожен кадр</string>
     <string name="container_graphics_disable_present_wait">Вимкнути KHR_present_wait</string>
@@ -667,6 +703,9 @@
     <string name="settings_general_cursor_speed">Швидкість курсора</string>
     <string name="settings_general_theme">Тема</string>
     <string name="settings_general_background">Фон</string>
+    <string name="settings_general_background_color_hex">Колір (hex)</string>
+    <string name="settings_general_wallpaper_selected">Шпалери вибрано</string>
+    <string name="settings_general_select_wallpaper">Вибрати шпалери</string>
     <string name="settings_general_title">Загальні</string>
     <string name="settings_general_enable_file_provider">Увімкнути файловий провайдер</string>
     <string name="settings_general_take_effect_next_startup">Ця опція набуде чинності при наступному запуску.</string>

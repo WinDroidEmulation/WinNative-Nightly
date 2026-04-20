@@ -106,11 +106,19 @@ class ContainerSettingsComposeDialog @JvmOverloads constructor(
                 state.desktopWallpaperSelected.value = true
             } catch (e: Throwable) {
                 Log.e(TAG, "Error copying wallpaper", e)
-                AppUtils.showToast(context, "Error saving wallpaper", Toast.LENGTH_SHORT)
+                AppUtils.showToast(
+                    context,
+                    context.getString(R.string.settings_containers_error_saving_wallpaper),
+                    Toast.LENGTH_SHORT,
+                )
             }
         }
 
     init {
+        state.wined3dCsmtEntries.value =
+            listOf(context.getString(R.string.common_ui_enabled), context.getString(R.string.common_ui_disabled))
+        state.wined3dStrictShaderMathEntries.value =
+            listOf(context.getString(R.string.common_ui_enabled), context.getString(R.string.common_ui_disabled))
         dialog = Dialog(activity, R.style.ContentDialog).apply {
             requestWindowFeature(Window.FEATURE_NO_TITLE)
             setCancelable(true)
@@ -645,7 +653,7 @@ class ContainerSettingsComposeDialog @JvmOverloads constructor(
         val c = container
         val name = state.name.value.trim()
         if (name.isEmpty()) {
-            AppUtils.showToast(context, "Name cannot be empty", Toast.LENGTH_SHORT)
+            AppUtils.showToast(context, context.getString(R.string.common_ui_name_cannot_be_empty), Toast.LENGTH_SHORT)
             return
         }
 
@@ -803,7 +811,10 @@ class ContainerSettingsComposeDialog @JvmOverloads constructor(
             } catch (e: Throwable) {
                 Log.e(TAG, "Error creating container", e)
                 preloaderDialog.close()
-                AppUtils.showToast(context, "Error: " + e.message)
+                AppUtils.showToast(
+                    context,
+                    context.getString(R.string.common_ui_error_with_message, e.message ?: ""),
+                )
             }
         }
     }

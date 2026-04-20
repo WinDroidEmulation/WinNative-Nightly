@@ -15,6 +15,7 @@
     <string name="common_ui_revert_icon">Revert Icon</string>
     <string name="common_ui_select_exe">Select EXE</string>
     <string name="common_ui_select_folder">Select Folder</string>
+    <string name="common_ui_current_folder">Current Folder</string>
     <string name="common_ui_select_valid_exe_file">Please select a valid .exe file</string>
     <string name="common_ui_select_valid_icon_file">Please select a valid .ico or .png file.</string>
     <string name="common_ui_exit">Exit</string>
@@ -105,6 +106,8 @@
     <string name="common_ui_check">Check</string>
     <string name="common_ui_select">Select</string>
     <string name="common_ui_storage_roots">Storage Roots</string>
+    <string name="common_ui_browse_local_folders_directly">Browse local folders directly</string>
+    <string name="common_ui_no_folders_available_here">No folders available here</string>
     <string name="common_ui_grant_all_files_access_browse">Grant all file access to browse folders directly.</string>
     <string name="common_ui_not_configured">Not configured</string>
     <string name="common_ui_reinstall">Reinstall</string>
@@ -114,6 +117,16 @@
     <string name="common_ui_enabled">Enabled</string>
     <string name="common_ui_unknown_error">Unknown error</string>
     <string name="common_ui_proceed">Proceed</string>
+    <string name="common_ui_sign_out">Sign Out</string>
+    <string name="common_ui_name_cannot_be_empty">Name cannot be empty</string>
+    <string name="common_ui_error_with_message">Error: %1$s</string>
+    <string name="common_ui_64_bit">64-BIT</string>
+    <string name="common_ui_32_bit">32-BIT</string>
+    <string name="common_ui_64_bit_and_32_bit">64-BIT &amp; 32-BIT</string>
+    <plurals name="common_ui_folder_count">
+        <item quantity="one">%d folder</item>
+        <item quantity="other">%d folders</item>
+    </plurals>
 
     <!-- Library > Games -->
     <string name="library_games_shortcut_created">Shortcut created</string>
@@ -156,9 +169,21 @@
     <string name="stores_accounts_steam_integration_title">Steam</string>
     <string name="stores_accounts_shared_downloads_folder">Shared Downloads Folder</string>
     <string name="stores_accounts_shared_downloads_subtitle">Use a single folder across all stores</string>
+    <string name="stores_accounts_default_downloads_folder">Default Downloads Folder</string>
+    <string name="stores_accounts_steam_downloads">Steam Downloads</string>
+    <string name="stores_accounts_epic_downloads">Epic Downloads</string>
+    <string name="stores_accounts_gog_downloads">GOG Downloads</string>
     <string name="stores_accounts_download_speed">Download Speed</string>
     <string name="stores_accounts_download_speed_subtitle">Controls Steam download thread concurrency</string>
     <string name="stores_accounts_download_server">Download Server</string>
+    <string name="stores_accounts_connected_stores">Connected Stores</string>
+    <string name="stores_accounts_download_settings">Download Settings</string>
+    <string name="stores_accounts_download_speed_conservative">Conservative</string>
+    <string name="stores_accounts_download_speed_balanced">Balanced</string>
+    <string name="stores_accounts_download_speed_standard">Standard</string>
+    <string name="stores_accounts_download_speed_performance">Performance</string>
+    <string name="stores_accounts_download_server_auto_detected">Auto-detected: %1$s</string>
+    <string name="stores_accounts_download_server_subtitle">Steam CDN region for game downloads</string>
     <string name="stores_accounts_sign_out_confirm">Sign out of %1$s?</string>
     <string name="stores_accounts_sign_out_message">You\'ll need to sign in again to access your library.</string>
     <string name="stores_accounts_logged_in_epic">Logged in to Epic Games!</string>
@@ -302,6 +327,7 @@
     <string name="container_config_total">Total</string>
     <string name="container_config_clear_cache">Clear Cache</string>
     <string name="container_config_estimated_used_space">Estimated Used Space</string>
+    <string name="settings_containers_error_saving_wallpaper">Error saving wallpaper</string>
     <string name="container_config_directinput_mapper_type">DirectInput Mapper Type</string>
     <string name="container_config_title">Configuration</string>
     <string name="container_config_startup_selection">Startup Selection</string>
@@ -346,6 +372,8 @@
     <string name="container_wine_mouse_warp_override">Mouse Warp Override</string>
     <string name="container_wine_directx">DirectX</string>
     <string name="container_wine_dxvk_version">DXVK Version</string>
+    <string name="container_wine_dxvk_config_title">DXVK Configuration</string>
+    <string name="container_wine_wined3d_config_title">WineD3D Configuration</string>
     <string name="container_wine_vkd3d_version">VKD3D Version</string>
     <string name="container_wine_version">Wine Version</string>
     <string name="container_wine_dxwrapper_help_content">
@@ -365,6 +393,8 @@
 
     <!-- Container > Box64 -->
     <string name="container_box64_title">Box64</string>
+    <string name="container_box64_wowbox64_title">Box64 / Wowbox64</string>
+    <string name="container_wowbox64_title">Wowbox64</string>
     <string name="container_box64_preset">Box64 Preset</string>
     <string name="container_box64_version">Box64 Version</string>
     <string name="container_box64_stability">Stability</string>
@@ -460,6 +490,7 @@
     <string name="container_graphics_configuration">Graphics Driver Configuration</string>
     <string name="container_graphics_version">Graphics Driver Version</string>
     <string name="container_graphics_available_extensions">Available Extensions</string>
+    <string name="container_graphics_extensions_enabled_summary">%1$d / %2$d enabled</string>
     <string name="container_graphics_max_device_memory">Max Device Memory</string>
     <string name="container_graphics_sync_frame">Sync Every Frame</string>
     <string name="container_graphics_disable_present_wait">Disable KHR_present_wait</string>
@@ -708,6 +739,9 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="settings_general_cursor_speed">Cursor Speed</string>
     <string name="settings_general_theme">Theme</string>
     <string name="settings_general_background">Background</string>
+    <string name="settings_general_background_color_hex">Color (hex)</string>
+    <string name="settings_general_wallpaper_selected">Wallpaper selected</string>
+    <string name="settings_general_select_wallpaper">Select wallpaper</string>
     <string name="settings_general_title">General</string>
     <string name="settings_general_enable_file_provider">Enable File Provider</string>
     <string name="settings_general_take_effect_next_startup">This option will take effect at the next startup.</string>

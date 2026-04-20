@@ -197,7 +197,7 @@ object DirectoryPickerDialog {
         val footerSubtitle =
             title
                 .takeUnless { it.equals(footerTitle, ignoreCase = true) }
-                ?: "Browse local folders directly"
+                ?: activityString(R.string.common_ui_browse_local_folders_directly)
 
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val isLandscape = maxWidth > maxHeight
@@ -221,7 +221,7 @@ object DirectoryPickerDialog {
                             .padding(horizontal = 18.dp, vertical = 14.dp),
                 ) {
                     Text(
-                        text = "Current Folder",
+                        text = activityString(R.string.common_ui_current_folder),
                         color = TextPrimary,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -255,7 +255,7 @@ object DirectoryPickerDialog {
                         )
 
                         Text(
-                            text = "$folderCount folders",
+                            text = activityPlural(R.plurals.common_ui_folder_count, folderCount),
                             color = TextPrimary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
@@ -284,7 +284,7 @@ object DirectoryPickerDialog {
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "No folders available here",
+                                    text = activityString(R.string.common_ui_no_folders_available_here),
                                     color = TextSecondary,
                                     fontSize = 12.sp,
                                 )
@@ -836,4 +836,10 @@ object DirectoryPickerDialog {
     }
     @Composable
     private fun activityString(resId: Int): String = androidx.compose.ui.res.stringResource(id = resId)
+
+    @Composable
+    private fun activityPlural(
+        resId: Int,
+        quantity: Int,
+    ): String = androidx.compose.ui.res.pluralStringResource(id = resId, count = quantity, quantity)
 }

@@ -102,6 +102,12 @@
     <string name="common_ui_application">应用程序</string>
     <string name="common_ui_check">检查</string>
     <string name="common_ui_select">选择</string>
+    <string name="common_ui_select_folder">选择文件夹</string>
+    <string name="common_ui_current_folder">当前文件夹</string>
+    <string name="common_ui_storage_roots">存储根目录</string>
+    <string name="common_ui_browse_local_folders_directly">直接浏览本地文件夹</string>
+    <string name="common_ui_no_folders_available_here">此处没有可用的文件夹</string>
+    <string name="common_ui_grant_all_files_access_browse">请授予所有文件访问权限以直接浏览本地文件夹。</string>
     <string name="common_ui_not_configured">未配置</string>
     <string name="common_ui_reinstall">重新安装</string>
     <string name="common_ui_exit_app_confirm">退出 WinNative？</string>
@@ -110,6 +116,16 @@
     <string name="common_ui_enabled">已启用</string>
     <string name="common_ui_unknown_error">未知错误</string>
     <string name="common_ui_proceed">继续</string>
+    <string name="common_ui_sign_out">退出登录</string>
+    <string name="common_ui_name_cannot_be_empty">名称不能为空</string>
+    <string name="common_ui_error_with_message">错误：%1$s</string>
+    <string name="common_ui_64_bit">64 位</string>
+    <string name="common_ui_32_bit">32 位</string>
+    <string name="common_ui_64_bit_and_32_bit">64 位与 32 位</string>
+    <plurals name="common_ui_folder_count">
+        <item quantity="one">%d 个文件夹</item>
+        <item quantity="other">%d 个文件夹</item>
+    </plurals>
 
     <!-- Library > Games -->
     <string name="library_games_shortcut_created">快捷方式已创建</string>
@@ -152,9 +168,21 @@
     <string name="stores_accounts_steam_integration_title">Steam</string>
     <string name="stores_accounts_shared_downloads_folder">共享下载文件夹</string>
     <string name="stores_accounts_shared_downloads_subtitle">所有商店使用同一个文件夹</string>
+    <string name="stores_accounts_default_downloads_folder">默认下载文件夹</string>
+    <string name="stores_accounts_steam_downloads">Steam 下载</string>
+    <string name="stores_accounts_epic_downloads">Epic 下载</string>
+    <string name="stores_accounts_gog_downloads">GOG 下载</string>
     <string name="stores_accounts_download_speed">下载速度</string>
     <string name="stores_accounts_download_speed_subtitle">控制 Steam 下载线程并发数</string>
     <string name="stores_accounts_download_server">下载服务器</string>
+    <string name="stores_accounts_connected_stores">已连接的商店</string>
+    <string name="stores_accounts_download_settings">下载设置</string>
+    <string name="stores_accounts_download_speed_conservative">保守</string>
+    <string name="stores_accounts_download_speed_balanced">平衡</string>
+    <string name="stores_accounts_download_speed_standard">标准</string>
+    <string name="stores_accounts_download_speed_performance">性能</string>
+    <string name="stores_accounts_download_server_auto_detected">自动检测：%1$s</string>
+    <string name="stores_accounts_download_server_subtitle">用于游戏下载的 Steam CDN 区域</string>
     <string name="stores_accounts_sign_out_confirm">退出 %1$s 登录？</string>
     <string name="stores_accounts_sign_out_message">您需要重新登录才能访问游戏库。</string>
     <string name="stores_accounts_logged_in_epic">已登录 Epic Games！</string>
@@ -283,6 +311,7 @@
     <string name="container_config_total">总计</string>
     <string name="container_config_clear_cache">清除缓存</string>
     <string name="container_config_estimated_used_space">预估已用空间</string>
+    <string name="settings_containers_error_saving_wallpaper">保存壁纸时出错</string>
     <string name="container_config_directinput_mapper_type">DirectInput 映射器类型</string>
     <string name="container_config_title">配置</string>
     <string name="container_config_startup_selection">启动选择</string>
@@ -326,6 +355,8 @@
     <string name="container_wine_mouse_warp_override">鼠标跳转覆盖</string>
     <string name="container_wine_directx">DirectX</string>
     <string name="container_wine_dxvk_version">DXVK 版本</string>
+    <string name="container_wine_dxvk_config_title">DXVK 配置</string>
+    <string name="container_wine_wined3d_config_title">WineD3D 配置</string>
     <string name="container_wine_vkd3d_version">VKD3D 版本</string>
     <string name="container_wine_version">Wine 版本</string>
     <string name="container_wine_dxwrapper_help_content">
@@ -344,6 +375,8 @@
 
     <!-- Container > Box64 -->
     <string name="container_box64_title">Box64</string>
+    <string name="container_box64_wowbox64_title">Box64 / Wowbox64</string>
+    <string name="container_wowbox64_title">Wowbox64</string>
     <string name="container_box64_preset">Box64 预设</string>
     <string name="container_box64_version">Box64 版本</string>
     <string name="container_box64_stability">稳定性</string>
@@ -439,6 +472,7 @@
     <string name="container_graphics_configuration">图形驱动配置</string>
     <string name="container_graphics_version">图形驱动版本</string>
     <string name="container_graphics_available_extensions">可用扩展</string>
+    <string name="container_graphics_extensions_enabled_summary">已启用 %1$d / %2$d</string>
     <string name="container_graphics_max_device_memory">最大设备内存</string>
     <string name="container_graphics_sync_frame">每帧同步</string>
     <string name="container_graphics_disable_present_wait">禁用 KHR_present_wait</string>
@@ -667,6 +701,9 @@
     <string name="settings_general_cursor_speed">光标速度</string>
     <string name="settings_general_theme">主题</string>
     <string name="settings_general_background">背景</string>
+    <string name="settings_general_background_color_hex">颜色（十六进制）</string>
+    <string name="settings_general_wallpaper_selected">已选择壁纸</string>
+    <string name="settings_general_select_wallpaper">选择壁纸</string>
     <string name="settings_general_title">通用</string>
     <string name="settings_general_enable_file_provider">启用文件提供程序</string>
     <string name="settings_general_take_effect_next_startup">此选项将在下次启动时生效。</string>

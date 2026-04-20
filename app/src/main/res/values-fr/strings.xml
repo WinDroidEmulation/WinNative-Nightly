@@ -102,6 +102,12 @@
     <string name="common_ui_application">Application</string>
     <string name="common_ui_check">Vérifier</string>
     <string name="common_ui_select">Sélectionner</string>
+    <string name="common_ui_select_folder">Sélectionner un dossier</string>
+    <string name="common_ui_current_folder">Dossier actuel</string>
+    <string name="common_ui_storage_roots">Emplacements de stockage</string>
+    <string name="common_ui_browse_local_folders_directly">Parcourir directement les dossiers locaux</string>
+    <string name="common_ui_no_folders_available_here">Aucun dossier disponible ici</string>
+    <string name="common_ui_grant_all_files_access_browse">Accordez l\'accès complet aux fichiers pour parcourir directement les dossiers locaux.</string>
     <string name="common_ui_not_configured">Non configuré</string>
     <string name="common_ui_reinstall">Réinstaller</string>
     <string name="common_ui_exit_app_confirm">Quitter WinNative ?</string>
@@ -110,6 +116,16 @@
     <string name="common_ui_enabled">Activé</string>
     <string name="common_ui_unknown_error">Erreur inconnue</string>
     <string name="common_ui_proceed">Continuer</string>
+    <string name="common_ui_sign_out">Se déconnecter</string>
+    <string name="common_ui_name_cannot_be_empty">Le nom ne peut pas être vide</string>
+    <string name="common_ui_error_with_message">Erreur : %1$s</string>
+    <string name="common_ui_64_bit">64 bits</string>
+    <string name="common_ui_32_bit">32 bits</string>
+    <string name="common_ui_64_bit_and_32_bit">64 bits et 32 bits</string>
+    <plurals name="common_ui_folder_count">
+        <item quantity="one">%d dossier</item>
+        <item quantity="other">%d dossiers</item>
+    </plurals>
 
     <!-- Library > Games -->
     <string name="library_games_shortcut_created">Raccourci créé</string>
@@ -152,9 +168,21 @@
     <string name="stores_accounts_steam_integration_title">Steam</string>
     <string name="stores_accounts_shared_downloads_folder">Dossier de téléchargements partagé</string>
     <string name="stores_accounts_shared_downloads_subtitle">Utiliser un seul dossier pour toutes les boutiques</string>
+    <string name="stores_accounts_default_downloads_folder">Dossier de téléchargements par défaut</string>
+    <string name="stores_accounts_steam_downloads">Téléchargements Steam</string>
+    <string name="stores_accounts_epic_downloads">Téléchargements Epic</string>
+    <string name="stores_accounts_gog_downloads">Téléchargements GOG</string>
     <string name="stores_accounts_download_speed">Vitesse de téléchargement</string>
     <string name="stores_accounts_download_speed_subtitle">Contrôle la concurrence des threads de téléchargement Steam</string>
     <string name="stores_accounts_download_server">Serveur de téléchargement</string>
+    <string name="stores_accounts_connected_stores">Boutiques connectées</string>
+    <string name="stores_accounts_download_settings">Paramètres de téléchargement</string>
+    <string name="stores_accounts_download_speed_conservative">Conservateur</string>
+    <string name="stores_accounts_download_speed_balanced">Équilibré</string>
+    <string name="stores_accounts_download_speed_standard">Standard</string>
+    <string name="stores_accounts_download_speed_performance">Performances</string>
+    <string name="stores_accounts_download_server_auto_detected">Détecté automatiquement : %1$s</string>
+    <string name="stores_accounts_download_server_subtitle">Région CDN Steam pour les téléchargements de jeux</string>
     <string name="stores_accounts_sign_out_confirm">Se déconnecter de %1$s ?</string>
     <string name="stores_accounts_sign_out_message">Vous devrez vous reconnecter pour accéder à votre bibliothèque.</string>
     <string name="stores_accounts_logged_in_epic">Connecté à Epic Games !</string>
@@ -283,6 +311,7 @@
     <string name="container_config_total">Total</string>
     <string name="container_config_clear_cache">Vider le cache</string>
     <string name="container_config_estimated_used_space">Espace utilisé estimé</string>
+    <string name="settings_containers_error_saving_wallpaper">Erreur lors de l\'enregistrement du fond d\'écran</string>
     <string name="container_config_directinput_mapper_type">Type de mappeur DirectInput</string>
     <string name="container_config_title">Configuration</string>
     <string name="container_config_startup_selection">Sélection au démarrage</string>
@@ -326,6 +355,8 @@
     <string name="container_wine_mouse_warp_override">Remplacement du déplacement souris</string>
     <string name="container_wine_directx">DirectX</string>
     <string name="container_wine_dxvk_version">Version de DXVK</string>
+    <string name="container_wine_dxvk_config_title">Configuration DXVK</string>
+    <string name="container_wine_wined3d_config_title">Configuration WineD3D</string>
     <string name="container_wine_vkd3d_version">Version de VKD3D</string>
     <string name="container_wine_version">Version de Wine</string>
     <string name="container_wine_dxwrapper_help_content">
@@ -344,6 +375,8 @@
 
     <!-- Container > Box64 -->
     <string name="container_box64_title">Box64</string>
+    <string name="container_box64_wowbox64_title">Box64 / Wowbox64</string>
+    <string name="container_wowbox64_title">Wowbox64</string>
     <string name="container_box64_preset">Préréglage Box64</string>
     <string name="container_box64_version">Version de Box64</string>
     <string name="container_box64_stability">Stabilité</string>
@@ -439,6 +472,7 @@
     <string name="container_graphics_configuration">Configuration du pilote graphique</string>
     <string name="container_graphics_version">Version du pilote graphique</string>
     <string name="container_graphics_available_extensions">Extensions disponibles</string>
+    <string name="container_graphics_extensions_enabled_summary">%1$d / %2$d activées</string>
     <string name="container_graphics_max_device_memory">Mémoire maximale de l\'appareil</string>
     <string name="container_graphics_sync_frame">Synchroniser chaque image</string>
     <string name="container_graphics_disable_present_wait">Désactiver KHR_present_wait</string>
@@ -667,6 +701,9 @@ Par ex. <b>META</b> pour la <i>touche META</i>, \n
     <string name="settings_general_cursor_speed">Vitesse du curseur</string>
     <string name="settings_general_theme">Thème</string>
     <string name="settings_general_background">Arrière-plan</string>
+    <string name="settings_general_background_color_hex">Couleur (hex)</string>
+    <string name="settings_general_wallpaper_selected">Fond d\'écran sélectionné</string>
+    <string name="settings_general_select_wallpaper">Sélectionner le fond d\'écran</string>
     <string name="settings_general_title">Général</string>
     <string name="settings_general_enable_file_provider">Activer le fournisseur de fichiers</string>
     <string name="settings_general_take_effect_next_startup">Cette option prendra effet au prochain démarrage.</string>

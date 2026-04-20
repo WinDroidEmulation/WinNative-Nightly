@@ -203,13 +203,13 @@ class GameSettingsStateHolder {
 
     // WineD3D Configuration (inline card)
     val wined3dConfigExpanded = mutableStateOf(false)
-    val wined3dCsmtEntries = mutableStateOf(listOf("Enabled", "Disabled"))
+    val wined3dCsmtEntries = mutableStateOf<List<String>>(emptyList())
     val wined3dSelectedCsmt = mutableIntStateOf(0)
     val wined3dGpuNameEntries = mutableStateOf<List<String>>(emptyList())
     val wined3dSelectedGpuName = mutableIntStateOf(0)
     val wined3dVideoMemorySizeEntries = mutableStateOf<List<String>>(emptyList())
     val wined3dSelectedVideoMemorySize = mutableIntStateOf(0)
-    val wined3dStrictShaderMathEntries = mutableStateOf(listOf("Enabled", "Disabled"))
+    val wined3dStrictShaderMathEntries = mutableStateOf<List<String>>(emptyList())
     val wined3dSelectedStrictShaderMath = mutableIntStateOf(0)
     val wined3dOffscreenRenderingModeEntries = mutableStateOf(listOf("fbo", "backbuffer"))
     val wined3dSelectedOffscreenRenderingMode = mutableIntStateOf(0)
@@ -1274,7 +1274,7 @@ private fun ExtensionsMultiSelect(state: GameSettingsStateHolder) {
         ) {
             Text(
                 if (extensions.isEmpty()) "—"
-                else "$enabledCount / ${extensions.size} enabled",
+                else stringResource(R.string.container_graphics_extensions_enabled_summary, enabledCount, extensions.size),
                 color = TextPrimary,
                 fontSize = 14.sp,
                 modifier = Modifier.weight(1f)
@@ -1347,7 +1347,7 @@ private fun ExtensionsPickerDialog(
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
-                        "$enabledCount / ${extensions.size}",
+                        stringResource(R.string.container_graphics_extensions_enabled_summary, enabledCount, extensions.size),
                         color = AccentBlue,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -1459,7 +1459,7 @@ private fun DXVKConfigCard(
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                "DXVK " + stringResource(R.string.container_config_title),
+                stringResource(R.string.container_wine_dxvk_config_title),
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -1590,7 +1590,7 @@ private fun WineD3DConfigCard(state: GameSettingsStateHolder) {
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                "WineD3D " + stringResource(R.string.container_config_title),
+                stringResource(R.string.container_wine_wined3d_config_title),
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -1908,7 +1908,7 @@ private fun WineSection(
                         ) {
                             Box(Modifier.weight(1f)) {
                                 SettingTextField(
-                                    label = "Color (hex)",
+                                    label = stringResource(R.string.settings_general_background_color_hex),
                                     value = state.desktopBackgroundColor.value,
                                     onValueChange = { state.desktopBackgroundColor.value = it }
                                 )
@@ -1941,8 +1941,11 @@ private fun WineSection(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                if (state.desktopWallpaperSelected.value) "Wallpaper selected"
-                                else "Select wallpaper",
+                                if (state.desktopWallpaperSelected.value) {
+                                    stringResource(R.string.settings_general_wallpaper_selected)
+                                } else {
+                                    stringResource(R.string.settings_general_select_wallpaper)
+                                },
                                 color = if (state.desktopWallpaperSelected.value) TextPrimary else TextSecondary,
                                 fontSize = 12.sp,
                                 modifier = Modifier.weight(1f)
@@ -2234,7 +2237,7 @@ private fun VariablesSection(
                                 .padding(horizontal = 12.dp, vertical = 10.dp)
                         ) {
                             Text(
-                                drive.path.ifEmpty { "Select a folder" },
+                                drive.path.ifEmpty { stringResource(R.string.common_ui_select_folder) },
                                 color = if (drive.path.isEmpty()) TextDim else TextPrimary,
                                 fontSize = 12.sp,
                                 maxLines = 1,
@@ -2747,7 +2750,7 @@ private fun EnvValueTextField(
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
                 if (value.isEmpty()) {
-                    Text("value", color = TextDim, fontSize = 13.sp)
+                    Text(stringResource(R.string.common_ui_value), color = TextDim, fontSize = 13.sp)
                 }
                 innerTextField()
             }
@@ -3057,8 +3060,8 @@ private fun AdvancedSection(
         val usesPlainBox64 = box64Id32 == "box64" || box64Id64 == "box64"
         val usesWowbox64 = box64Id32 == "wowbox64" || box64Id64 == "wowbox64"
         val box64Title = when {
-            usesPlainBox64 && usesWowbox64 -> "Box64 / Wowbox64"
-            usesWowbox64 -> "Wowbox64"
+            usesPlainBox64 && usesWowbox64 -> stringResource(R.string.container_box64_wowbox64_title)
+            usesWowbox64 -> stringResource(R.string.container_wowbox64_title)
             else -> stringResource(R.string.container_box64_title)
         }
         EmulatorSectionHeader(box64Title, box64Usage)
@@ -3337,6 +3340,7 @@ private fun SubsectionLabel(text: String) {
 }
 
 // Returns the architecture badge for the slots currently using one of [ids].
+@Composable
 private fun emulatorUsageLabel(
     state: GameSettingsStateHolder,
     ids: Set<String>
@@ -3348,9 +3352,9 @@ private fun emulatorUsageLabel(
     val used32 = id32 in ids
     val used64 = id64 in ids
     return when {
-        used32 && used64 -> "64-BIT & 32-BIT"
-        used64 -> "64-BIT"
-        used32 -> "32-BIT"
+        used32 && used64 -> stringResource(R.string.common_ui_64_bit_and_32_bit)
+        used64 -> stringResource(R.string.common_ui_64_bit)
+        used32 -> stringResource(R.string.common_ui_32_bit)
         else -> null
     }
 }
