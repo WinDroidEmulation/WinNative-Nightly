@@ -841,7 +841,6 @@ object GameSaveBackupManager {
 
     private suspend fun isAuthenticatedBlocking(activity: Activity): Boolean =
         try {
-            PlayGamesBootstrap.ensureInitialized(activity)
             val task = PlayGames.getGamesSignInClient(activity).isAuthenticated
             val result =
                 withContext(Dispatchers.IO) {
@@ -859,7 +858,6 @@ object GameSaveBackupManager {
         }
 
     private suspend fun awaitAuthenticatedSession(activity: Activity): Boolean {
-        PlayGamesBootstrap.ensureInitialized(activity)
         repeat(AUTH_SESSION_RETRY_COUNT) { attempt ->
             if (isAuthenticatedBlocking(activity)) {
                 return true

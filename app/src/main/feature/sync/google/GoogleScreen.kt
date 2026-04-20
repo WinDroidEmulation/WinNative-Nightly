@@ -227,8 +227,8 @@ fun GoogleScreen() {
                                     autoBackupEnabled = true
                                     autoBackupPrefs.edit().putBoolean("cloud_sync_auto_backup", true).apply()
                                 } else {
-                                    autoBackupEnabled = false
-                                    autoBackupPrefs.edit().putBoolean("cloud_sync_auto_backup", false).apply()
+                                    autoBackupEnabled = true
+                                    autoBackupPrefs.edit().putBoolean("cloud_sync_auto_backup", true).apply()
                                 }
                             } catch (e: Exception) {
                                 AppUtils.showToast(context, "Drive authorization failed: ${e.message}")

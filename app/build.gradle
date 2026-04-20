@@ -219,8 +219,6 @@ dependencies {
 
     implementation libs.playServicesGamesV2
     implementation libs.playServicesAuth
-
-    implementation libs.workRuntimeKtx
 }
 
 spotless {
