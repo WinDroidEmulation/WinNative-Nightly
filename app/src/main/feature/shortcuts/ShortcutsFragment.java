@@ -23,7 +23,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.compose.ui.platform.ComposeView;
-import androidx.documentfile.provider.DocumentFile;
 import androidx.fragment.app.Fragment;
 import androidx.preference.PreferenceManager;
 import com.winlator.cmod.BuildConfig;
@@ -235,13 +234,12 @@ public class ShortcutsFragment extends Fragment {
 
     File shortcutsDir;
     if (uriString != null) {
-      Uri folderUri = Uri.parse(uriString);
-      DocumentFile pickedDir = DocumentFile.fromTreeUri(getContext(), folderUri);
-      if (pickedDir == null || !pickedDir.canWrite()) {
+      String resolvedPath = FileUtils.getFilePathFromUri(getContext(), Uri.parse(uriString));
+      if (resolvedPath == null || resolvedPath.isEmpty()) {
         AppUtils.showToast(getContext(), R.string.common_ui_cannot_write_folder);
         return;
       }
-      shortcutsDir = new File(FileUtils.getFilePathFromUri(getContext(), folderUri));
+      shortcutsDir = new File(resolvedPath);
     } else {
       shortcutsDir = new File(SettingsConfig.DEFAULT_SHORTCUT_EXPORT_PATH);
     }

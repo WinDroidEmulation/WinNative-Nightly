@@ -381,8 +381,20 @@ object SteamClientManager {
             val windowsPath =
                 when {
                     normalizedPath.matches(Regex("^[A-Za-z]:.*")) -> normalizedPath
-                    hostExeFile.isAbsolute -> WineUtils.getWindowsPath(null, hostExeFile.absolutePath)
-                    else -> "F:\\$normalizedPath"
+                    hostExeFile.isAbsolute -> {
+                        val absolutePath = hostExeFile.absolutePath
+                        val mappedStoragePath =
+                            if (absolutePath.startsWith("/storage/") || absolutePath.startsWith("/mnt/media_rw/")) {
+                                WineUtils.getDosPath(absolutePath)
+                            } else {
+                                null
+                            }
+                        mappedStoragePath ?: WineUtils.getWindowsPath(null, absolutePath)
+                    }
+                    else -> {
+                        Log.e(TAG, "Steamless received a relative exe path without drive context: $exePath")
+                        return false
+                    }
                 }
 
             batchFile = File(rootDir, "tmp/steamless_wrapper.bat")

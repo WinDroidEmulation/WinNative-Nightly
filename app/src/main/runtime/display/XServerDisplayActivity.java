@@ -4542,12 +4542,12 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                     extraArgs = getIntent().getStringExtra("extra_exec_args");
                 }
                 extraArgs = (extraArgs != null && !extraArgs.isEmpty()) ? " " + extraArgs : "";
+                String gameInstallPath = shortcut.getExtra("game_install_path");
 
                 boolean needsAutoDetect = path == null || path.isEmpty()
                         || "D:\\".equals(path) || "D:\\\\".equals(path)
                         || "A:\\".equals(path) || "A:\\\\".equals(path);
                 if (needsAutoDetect) {
-                    String gameInstallPath = shortcut.getExtra("game_install_path");
                     if ((gameInstallPath == null || gameInstallPath.isEmpty()) && gameSource.equals("GOG")) {
                         String gogId = shortcut.getExtra("gog_id");
                         if (!gogId.isEmpty()) {
@@ -4591,7 +4591,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                 }
                 
                 String filename = path;
-                String dir = "F:\\";
+                String dir = null;
                 
                 if (path != null && path.contains("\\")) {
                     int lastBackslash = path.lastIndexOf("\\");
@@ -4601,6 +4601,13 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                 } else if (path != null && path.contains(":")) {
                     filename = path.substring(path.indexOf(":") + 1);
                     dir = path.substring(0, path.indexOf(":") + 1) + "\\";
+                }
+                if ((dir == null || dir.isEmpty()) && gameInstallPath != null && !gameInstallPath.isEmpty()) {
+                    dir = com.winlator.cmod.runtime.wine.WineUtils.hostPathToRootWinePath(container, gameInstallPath);
+                    if (dir != null && dir.endsWith(":")) dir += "\\";
+                }
+                if (dir == null || dir.isEmpty()) {
+                    dir = "F:\\";
                 }
 
                 File nativeDir = com.winlator.cmod.runtime.wine.WineUtils.getNativePath(imageFs, dir);

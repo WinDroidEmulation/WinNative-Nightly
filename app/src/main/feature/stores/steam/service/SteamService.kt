@@ -1367,6 +1367,15 @@ class SteamService :
             return appName
         }
 
+        private fun normalizeInstallPath(path: String): String {
+            if (path.isBlank()) return path
+            return try {
+                File(path).canonicalPath
+            } catch (_: IOException) {
+                File(path).absolutePath
+            }
+        }
+
         fun getAppDirPath(gameId: Int): String {
             val info = getAppInfoOf(gameId)
 
@@ -1375,7 +1384,7 @@ class SteamService :
             val customDir = info?.installDir.orEmpty()
             if (customDir.isNotEmpty() && (customDir.startsWith("/") || customDir.contains(File.separator))) {
                 // It's a full path (custom install location)
-                return customDir
+                return normalizeInstallPath(customDir)
             }
 
             val appName = getAppDirName(info)
@@ -1394,36 +1403,36 @@ class SteamService :
                         val path = Paths.get(baseDir, appName)
                         if (Files.exists(path)) {
                             Timber.i("getAppDirPath: found existing path $path")
-                            return path.pathString
+                            return normalizeInstallPath(path.pathString)
                         }
                         if (oldName.isNotEmpty()) {
                             val oldPath = Paths.get(baseDir, oldName)
                             if (Files.exists(oldPath)) {
                                 Timber.i("getAppDirPath: found existing oldPath $oldPath")
-                                return oldPath.pathString
+                                return normalizeInstallPath(oldPath.pathString)
                             }
                         }
                         // If it doesn't exist yet, this is where we'll install it
                         Timber.i("getAppDirPath: returning new path $path")
-                        return path.pathString
+                        return normalizeInstallPath(path.pathString)
                     }
                 }
             }
 
             for (basePath in allInstallPaths) {
                 val candidate = Paths.get(basePath, appName)
-                if (Files.exists(candidate)) return candidate.pathString
+                if (Files.exists(candidate)) return normalizeInstallPath(candidate.pathString)
                 if (oldName.isNotEmpty()) {
                     val oldCandidate = Paths.get(basePath, oldName)
-                    if (Files.exists(oldCandidate)) return oldCandidate.pathString
+                    if (Files.exists(oldCandidate)) return normalizeInstallPath(oldCandidate.pathString)
                 }
             }
 
             // Nothing on disk yet – default to whatever location you want new installs to use
             if (PrefManager.useExternalStorage) {
-                return Paths.get(externalAppInstallPath, appName).pathString
+                return normalizeInstallPath(Paths.get(externalAppInstallPath, appName).pathString)
             }
-            return Paths.get(internalAppInstallPath, appName).pathString
+            return normalizeInstallPath(Paths.get(internalAppInstallPath, appName).pathString)
         }
 
         private fun createSteamShortcut(
@@ -1790,10 +1799,10 @@ class SteamService :
             val finalPath =
                 if (customFile.name.equals(safeFolderName, ignoreCase = true)) {
                     // User selected the game folder itself
-                    customFile.absolutePath
+                    normalizeInstallPath(customFile.absolutePath)
                 } else {
                     // User selected parent folder, create/use subfolder
-                    File(customInstallPath, safeFolderName).absolutePath
+                    normalizeInstallPath(File(customInstallPath, safeFolderName).absolutePath)
                 }
 
             // Update SteamApp in DB
@@ -2336,10 +2345,10 @@ class SteamService :
                 val finalPath =
                     if (customFile.name.equals(safeFolderName, ignoreCase = true)) {
                         // User selected the game folder itself
-                        customFile.absolutePath
+                        normalizeInstallPath(customFile.absolutePath)
                     } else {
                         // User selected parent folder, create/use subfolder
-                        File(customInstallPath, safeFolderName).absolutePath
+                        normalizeInstallPath(File(customInstallPath, safeFolderName).absolutePath)
                     }
 
                 appDirPath = finalPath

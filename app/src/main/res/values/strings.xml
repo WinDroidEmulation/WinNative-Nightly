@@ -14,6 +14,7 @@
     <string name="common_ui_select_icon">Select Icon</string>
     <string name="common_ui_revert_icon">Revert Icon</string>
     <string name="common_ui_select_exe">Select EXE</string>
+    <string name="common_ui_select_folder">Select Folder</string>
     <string name="common_ui_select_valid_exe_file">Please select a valid .exe file</string>
     <string name="common_ui_select_valid_icon_file">Please select a valid .ico or .png file.</string>
     <string name="common_ui_exit">Exit</string>
@@ -103,6 +104,8 @@
     <string name="common_ui_application">Application</string>
     <string name="common_ui_check">Check</string>
     <string name="common_ui_select">Select</string>
+    <string name="common_ui_storage_roots">Storage Roots</string>
+    <string name="common_ui_grant_all_files_access_browse">Grant all file access to browse folders directly.</string>
     <string name="common_ui_not_configured">Not configured</string>
     <string name="common_ui_reinstall">Reinstall</string>
     <string name="common_ui_exit_app_confirm">Exit WinNative?</string>

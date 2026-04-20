@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import org.json.JSONArray;
@@ -80,11 +81,25 @@ public abstract class WineUtils {
 
   public static String normalizePersistentDrives(Context context, String drives) {
     List<String[]> entries = new ArrayList<>();
+    LinkedHashSet<String> usedLetters = new LinkedHashSet<>();
+    LinkedHashSet<String> usedPaths = new LinkedHashSet<>();
     if (drives != null && !drives.isEmpty()) {
       for (String[] drive : Container.drivesIterator(drives)) {
-        if (drive[1] == null || drive[1].isEmpty()) continue;
-        if ("A".equals(drive[0]) || "E".equals(drive[0])) continue;
-        entries.add(new String[] {drive[0], drive[1]});
+        if (drive.length < 2 || drive[1] == null || drive[1].isEmpty()) continue;
+
+        String letter = normalizeDriveLetter(drive[0]);
+        if (!isSupportedDriveLetter(letter) || "A".equals(letter) || "E".equals(letter)) continue;
+
+        String normalizedPath = normalizeHostPath(drive[1]);
+        if (normalizedPath.isEmpty()
+            || usedLetters.contains(letter)
+            || usedPaths.contains(normalizedPath)) {
+          continue;
+        }
+
+        entries.add(new String[] {letter, drive[1]});
+        usedLetters.add(letter);
+        usedPaths.add(normalizedPath);
       }
     }
 
@@ -96,25 +111,14 @@ public abstract class WineUtils {
         android.os.Environment.getExternalStorageDirectory().getAbsolutePath();
     String sdCardRootPath = getSdCardRootPath();
 
-    upsertDrive(entries, "D", downloadsPath);
-    upsertDrive(entries, "F", externalStoragePath);
-    if (sdCardRootPath != null && !sdCardRootPath.isEmpty())
-      upsertDrive(entries, "G", sdCardRootPath);
-    else removeDrive(entries, "G");
+    ensureDriveMapping(entries, usedLetters, usedPaths, "D", downloadsPath);
+    ensureDriveMapping(entries, usedLetters, usedPaths, "F", externalStoragePath);
+    if (sdCardRootPath != null && !sdCardRootPath.isEmpty()) {
+      ensureDriveMapping(entries, usedLetters, usedPaths, "G", sdCardRootPath);
+    }
 
     StringBuilder normalized = new StringBuilder();
-    appendDriveIfPresent(normalized, entries, "C");
-    appendDriveIfPresent(normalized, entries, "D");
-    appendDriveIfPresent(normalized, entries, "F");
-    appendDriveIfPresent(normalized, entries, "G");
-
     for (String[] entry : entries) {
-      if ("C".equals(entry[0])
-          || "D".equals(entry[0])
-          || "F".equals(entry[0])
-          || "G".equals(entry[0])) {
-        continue;
-      }
       normalized.append(entry[0]).append(':').append(entry[1]);
     }
 
@@ -168,10 +172,6 @@ public abstract class WineUtils {
     } catch (IOException e) {
       return nativePath.equals(sdCardRoot) || nativePath.startsWith(sdCardRoot + File.separator);
     }
-  }
-
-  public static String getPreferredGameDriveLetter(String nativePath) {
-    return isOnSdCard(nativePath) ? "G" : "F";
   }
 
   public static File ensureDriveCGameSymlink(
@@ -251,30 +251,42 @@ public abstract class WineUtils {
     return hostPathToMappedWinePath(container, nativePath);
   }
 
-  private static void upsertDrive(List<String[]> entries, String letter, String path) {
-    for (String[] entry : entries) {
-      if (letter.equals(entry[0])) {
-        entry[1] = path;
-        return;
-      }
+  private static void ensureDriveMapping(
+      List<String[]> entries,
+      LinkedHashSet<String> usedLetters,
+      LinkedHashSet<String> usedPaths,
+      String preferredLetter,
+      String path) {
+    String normalizedPath = normalizeHostPath(path);
+    if (normalizedPath.isEmpty() || usedPaths.contains(normalizedPath)) return;
+
+    String resolvedLetter = preferredLetter;
+    if (usedLetters.contains(preferredLetter)) {
+      resolvedLetter = findFirstAvailableDriveLetter(usedLetters);
+      if (resolvedLetter == null) return;
     }
-    entries.add(new String[] {letter, path});
+
+    entries.add(new String[] {resolvedLetter, path});
+    usedLetters.add(resolvedLetter);
+    usedPaths.add(normalizedPath);
   }
 
-  private static void removeDrive(List<String[]> entries, String letter) {
-    for (int i = entries.size() - 1; i >= 0; i--) {
-      if (letter.equals(entries.get(i)[0])) entries.remove(i);
+  private static String findFirstAvailableDriveLetter(LinkedHashSet<String> usedLetters) {
+    for (char letter = 'D'; letter <= 'Y'; letter++) {
+      if (letter == 'E') continue;
+      String candidate = String.valueOf(letter);
+      if (!usedLetters.contains(candidate)) return candidate;
     }
+    return null;
   }
 
-  private static void appendDriveIfPresent(
-      StringBuilder builder, List<String[]> entries, String letter) {
-    for (String[] entry : entries) {
-      if (letter.equals(entry[0])) {
-        builder.append(entry[0]).append(':').append(entry[1]);
-        return;
-      }
-    }
+  private static String normalizeDriveLetter(String letter) {
+    if (letter == null) return "";
+    return letter.trim().toUpperCase(Locale.ENGLISH);
+  }
+
+  private static boolean isSupportedDriveLetter(String letter) {
+    return letter.length() == 1 && Character.isLetter(letter.charAt(0));
   }
 
   public static void createDosdevicesSymlinks(
@@ -1317,19 +1329,52 @@ public abstract class WineUtils {
   }
 
   public static String getDosPath(String path) {
-    if (path == null || path.isEmpty()) return "D:\\";
-    String downloadsPath =
-        android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_DOWNLOADS)
-            .getAbsolutePath();
-    String externalStoragePath =
-        android.os.Environment.getExternalStorageDirectory().getAbsolutePath();
+    return getDosPath(null, path);
+  }
 
-    if (path.startsWith(downloadsPath)) {
-      return "D:" + path.substring(downloadsPath.length()).replace("/", "\\");
-    } else if (path.startsWith(externalStoragePath)) {
-      return "F:" + path.substring(externalStoragePath.length()).replace("/", "\\");
+  public static String getDosPath(@Nullable Container container, String path) {
+    if (path == null || path.isEmpty()) return "D:\\";
+    if (container != null) {
+      String mappedPath = hostPathToMappedWinePath(container, path);
+      if (mappedPath != null && !mappedPath.isEmpty()) return mappedPath;
     }
+
+    String normalizedPath = normalizeHostPath(path);
+    String downloadsPath =
+        normalizeHostPath(
+            android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS)
+                .getAbsolutePath());
+    String externalStoragePath =
+        normalizeHostPath(android.os.Environment.getExternalStorageDirectory().getAbsolutePath());
+    String sdCardRootPath = getSdCardRootPath();
+
+    String mappedPath = buildDrivePath(normalizedPath, downloadsPath, "D");
+    if (mappedPath != null) return mappedPath;
+
+    if (sdCardRootPath != null && !sdCardRootPath.isEmpty()) {
+      mappedPath = buildDrivePath(normalizedPath, normalizeHostPath(sdCardRootPath), "G");
+      if (mappedPath != null) return mappedPath;
+    }
+
+    mappedPath = buildDrivePath(normalizedPath, externalStoragePath, "F");
+    if (mappedPath != null) return mappedPath;
+
     return "D:\\"; // fallback
+  }
+
+  private static String buildDrivePath(String normalizedPath, String rootPath, String driveLetter) {
+    if (normalizedPath == null
+        || normalizedPath.isEmpty()
+        || rootPath == null
+        || rootPath.isEmpty()
+        || !pathStartsWith(normalizedPath, rootPath)) {
+      return null;
+    }
+
+    String relativePath = normalizedPath.substring(rootPath.length()).replace("/", "\\");
+    while (relativePath.startsWith("\\")) relativePath = relativePath.substring(1);
+    if (relativePath.isEmpty()) return driveLetter + ":\\";
+    return driveLetter + ":\\" + relativePath;
   }
 }

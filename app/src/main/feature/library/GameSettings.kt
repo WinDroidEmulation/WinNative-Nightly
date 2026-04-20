@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -114,6 +115,7 @@ private val ChipSurface = Color(0xFF171722)
 private val ChipBorder = Color(0xFF2A2A3A)
 private val DangerRed = Color(0xFFFF6B6B)
 private val WarningAmber = Color(0xFFFFB74D)
+private val SelectableDriveLetters = ('D'..'Y').filter { it != 'E' }.map { "$it" }
 
 // ---------------------------------------------------------------------------
 // Data classes
@@ -121,7 +123,11 @@ private val WarningAmber = Color(0xFFFFB74D)
 data class WinComponentItem(val key: String, val label: String, val selectedIndex: Int)
 data class EnvVarItem(val key: String, val value: String)
 data class ExtraArgGroup(val header: String, val args: List<String>)
-data class DriveItem(val letter: String, val path: String)
+data class DriveItem(
+    val letter: String,
+    val path: String,
+    val canChangeLetter: Boolean = false,
+)
 
 // ---------------------------------------------------------------------------
 // State holder
@@ -331,6 +337,7 @@ interface GameSettingsCallbacks {
     fun onEmulatorChanged() {}
     fun onWineVersionChanged(versionIndex: Int) {}
     fun onAddDrive() {}
+    fun onDriveLetterChanged(index: Int, newLetter: String) {}
     fun onRemoveDrive(index: Int) {}
     fun onPickDrivePath(index: Int) {}
     fun onPickWallpaper() {}
@@ -2189,6 +2196,16 @@ private fun VariablesSection(
                 )
             } else {
                 drives.forEachIndexed { index, drive ->
+                    val otherLetters =
+                        drives
+                            .mapIndexedNotNull { otherIndex, otherDrive ->
+                                otherDrive.letter.takeUnless { otherIndex == index }?.uppercase()
+                            }.toSet()
+                    val availableLetters =
+                        SelectableDriveLetters.filter { letter ->
+                            letter.equals(drive.letter, ignoreCase = true) || letter !in otherLetters
+                        }
+
                     if (index > 0) {
                         Spacer(Modifier.height(2.dp))
                         Box(Modifier.fillMaxWidth().height(1.dp).background(DividerColor))
@@ -2200,21 +2217,12 @@ private fun VariablesSection(
                             .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 38.dp, height = 32.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(AccentBlue.copy(alpha = 0.1f))
-                                .border(1.dp, AccentBlue.copy(alpha = 0.3f), RoundedCornerShape(6.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "${drive.letter}:",
-                                color = AccentBlue,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                        DriveLetterSelector(
+                            selectedLetter = drive.letter.uppercase(),
+                            canChangeLetter = drive.canChangeLetter,
+                            availableLetters = availableLetters,
+                            onSelected = { callbacks.onDriveLetterChanged(index, it) },
+                        )
                         Spacer(Modifier.width(10.dp))
                         Box(
                             modifier = Modifier
@@ -2276,6 +2284,87 @@ private fun VariablesSection(
                         color = AccentBlue,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DriveLetterSelector(
+    selectedLetter: String,
+    canChangeLetter: Boolean,
+    availableLetters: List<String>,
+    onSelected: (String) -> Unit,
+) {
+    var expanded by remember(selectedLetter, availableLetters) { mutableStateOf(false) }
+    val showDropdown = canChangeLetter && availableLetters.size > 1
+
+    Box {
+        Row(
+            modifier =
+                Modifier
+                    .widthIn(min = 64.dp)
+                    .height(32.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(AccentBlue.copy(alpha = 0.1f))
+                    .border(1.dp, AccentBlue.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                    .clickable(
+                        enabled = showDropdown,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { expanded = true }
+                    .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                "$selectedLetter:",
+                color = AccentBlue,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (showDropdown) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = AccentBlue,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = showDropdown && expanded,
+            onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(8.dp),
+            containerColor = CardSurface,
+            modifier = Modifier.widthIn(min = 88.dp),
+        ) {
+            Column(
+                modifier =
+                    Modifier
+                        .heightIn(max = 240.dp)
+                        .verticalScroll(rememberScrollState()),
+            ) {
+                availableLetters.forEach { letter ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "$letter:",
+                                color = if (letter == selectedLetter) AccentBlue else TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight =
+                                    if (letter == selectedLetter) FontWeight.SemiBold
+                                    else FontWeight.Normal,
+                            )
+                        },
+                        onClick = {
+                            onSelected(letter)
+                            expanded = false
+                        },
                     )
                 }
             }

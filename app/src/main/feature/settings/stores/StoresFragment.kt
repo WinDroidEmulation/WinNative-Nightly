@@ -26,6 +26,7 @@ import com.winlator.cmod.feature.stores.gog.ui.auth.GOGOAuthActivity
 import com.winlator.cmod.feature.stores.steam.SteamLoginActivity
 import com.winlator.cmod.feature.stores.steam.service.SteamService
 import com.winlator.cmod.feature.stores.steam.utils.PrefManager
+import com.winlator.cmod.shared.android.DirectoryPickerDialog
 import com.winlator.cmod.shared.io.AssetPaths
 import com.winlator.cmod.shared.io.FileUtils
 import com.winlator.cmod.shared.theme.WinNativeTheme
@@ -37,51 +38,6 @@ import org.json.JSONObject
 class StoresFragment : Fragment() {
     private var storeState by mutableStateOf(StoreState())
     private lateinit var serverOptions: List<Pair<Int, String>>
-
-    // Folder-picker launchers
-    private val defaultFolderLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.OpenDocumentTree(),
-        ) { uri ->
-            uri?.let {
-                persistUri(it)
-                PrefManager.defaultDownloadFolder = it.toString()
-                refresh()
-            }
-        }
-
-    private val steamFolderLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.OpenDocumentTree(),
-        ) { uri ->
-            uri?.let {
-                persistUri(it)
-                PrefManager.steamDownloadFolder = it.toString()
-                refresh()
-            }
-        }
-
-    private val epicFolderLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.OpenDocumentTree(),
-        ) { uri ->
-            uri?.let {
-                persistUri(it)
-                PrefManager.epicDownloadFolder = it.toString()
-                refresh()
-            }
-        }
-
-    private val gogFolderLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.OpenDocumentTree(),
-        ) { uri ->
-            uri?.let {
-                persistUri(it)
-                PrefManager.gogDownloadFolder = it.toString()
-                refresh()
-            }
-        }
 
     private val gogLoginLauncher =
         registerForActivityResult(
@@ -189,10 +145,10 @@ class StoresFragment : Fragment() {
                             PrefManager.cellIdManuallySet = cellId != 0
                             refresh()
                         },
-                        onPickDefaultFolder = { defaultFolderLauncher.launch(null) },
-                        onPickSteamFolder = { steamFolderLauncher.launch(null) },
-                        onPickEpicFolder = { epicFolderLauncher.launch(null) },
-                        onPickGogFolder = { gogFolderLauncher.launch(null) },
+                        onPickDefaultFolder = { pickFolder(PrefManager.defaultDownloadFolder) { PrefManager.defaultDownloadFolder = it } },
+                        onPickSteamFolder = { pickFolder(PrefManager.steamDownloadFolder) { PrefManager.steamDownloadFolder = it } },
+                        onPickEpicFolder = { pickFolder(PrefManager.epicDownloadFolder) { PrefManager.epicDownloadFolder = it } },
+                        onPickGogFolder = { pickFolder(PrefManager.gogDownloadFolder) { PrefManager.gogDownloadFolder = it } },
                     )
                 }
             }
@@ -242,16 +198,6 @@ class StoresFragment : Fragment() {
             listOf(0 to "Automatic")
         }
 
-    private fun persistUri(uri: Uri) {
-        try {
-            requireContext().contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-            )
-        } catch (_: SecurityException) {
-        }
-    }
-
     private fun resolveUri(
         uriStr: String,
         ctx: android.content.Context,
@@ -261,6 +207,22 @@ class StoresFragment : Fragment() {
             FileUtils.getFilePathFromUri(ctx, Uri.parse(uriStr)) ?: uriStr
         } catch (_: Exception) {
             uriStr
+        }
+    }
+
+    private fun pickFolder(
+        currentValue: String,
+        onPicked: (String) -> Unit,
+    ) {
+        val hostActivity = activity ?: return
+        val currentPath = resolveUri(currentValue, hostActivity).ifBlank { null }
+        DirectoryPickerDialog.show(
+            activity = hostActivity,
+            initialPath = currentPath,
+            title = getString(R.string.settings_content_install_directory),
+        ) { path ->
+            onPicked(Uri.fromFile(java.io.File(path)).toString())
+            refresh()
         }
     }
 }

@@ -188,6 +188,7 @@ import com.winlator.cmod.runtime.input.ControllerHelper
 import com.winlator.cmod.runtime.wine.PeIconExtractor
 import com.winlator.cmod.shared.android.ActivityResultHost
 import com.winlator.cmod.shared.android.AppUtils
+import com.winlator.cmod.shared.android.DirectoryPickerDialog
 import com.winlator.cmod.shared.android.FixedFontScaleAppCompatActivity
 import com.winlator.cmod.shared.android.RefreshRateUtils
 import com.winlator.cmod.shared.io.StorageUtils
@@ -5581,17 +5582,16 @@ class UnifiedActivity :
         var showCustomPathWarning by remember { mutableStateOf(false) }
         var showDlcDialog by remember { mutableStateOf(false) }
 
-        val folderPickerLauncher =
-            rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocumentTree(),
-            ) { uri -> uri?.let { customPath = getPathFromTreeUri(it) } }
-
         if (showCustomPathWarning) {
             CustomPathWarningDialog(
                 onDismiss = { showCustomPathWarning = false },
                 onProceed = {
                     showCustomPathWarning = false
-                    folderPickerLauncher.launch(null)
+                    DirectoryPickerDialog.show(
+                        activity = this@UnifiedActivity,
+                        initialPath = customPath ?: EpicConstants.getGameInstallPath(context, app.appName),
+                        title = getString(R.string.settings_content_install_directory),
+                    ) { path -> customPath = path }
                 },
             )
         }
@@ -5789,7 +5789,11 @@ class UnifiedActivity :
                             if (customPath == null && defaultPathSet) {
                                 showCustomPathWarning = true
                             } else {
-                                folderPickerLauncher.launch(null)
+                                DirectoryPickerDialog.show(
+                                    activity = this@UnifiedActivity,
+                                    initialPath = customPath ?: EpicConstants.getGameInstallPath(context, app.appName),
+                                    title = getString(R.string.settings_content_install_directory),
+                                ) { path -> customPath = path }
                             }
                         },
                     )
@@ -6011,17 +6015,16 @@ class UnifiedActivity :
         var customPath by remember { mutableStateOf<String?>(null) }
         var showCustomPathWarning by remember { mutableStateOf(false) }
 
-        val folderPickerLauncher =
-            rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocumentTree(),
-            ) { uri -> uri?.let { customPath = getPathFromTreeUri(it) } }
-
         if (showCustomPathWarning) {
             CustomPathWarningDialog(
                 onDismiss = { showCustomPathWarning = false },
                 onProceed = {
                     showCustomPathWarning = false
-                    folderPickerLauncher.launch(null)
+                    DirectoryPickerDialog.show(
+                        activity = this@UnifiedActivity,
+                        initialPath = customPath ?: GOGConstants.defaultGOGGamesPath,
+                        title = getString(R.string.settings_content_install_directory),
+                    ) { path -> customPath = path }
                 },
             )
         }
@@ -6146,7 +6149,11 @@ class UnifiedActivity :
                         if (customPath == null && defaultPathSet) {
                             showCustomPathWarning = true
                         } else {
-                            folderPickerLauncher.launch(null)
+                            DirectoryPickerDialog.show(
+                                activity = this@UnifiedActivity,
+                                initialPath = customPath ?: GOGConstants.defaultGOGGamesPath,
+                                title = getString(R.string.settings_content_install_directory),
+                            ) { path -> customPath = path }
                         }
                     },
                 )
@@ -7026,17 +7033,16 @@ class UnifiedActivity :
         var showDlcDialog by remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
 
-        val folderPickerLauncher =
-            rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocumentTree(),
-            ) { uri -> uri?.let { customPath = getPathFromTreeUri(it) } }
-
         if (showCustomPathWarning) {
             CustomPathWarningDialog(
                 onDismiss = { showCustomPathWarning = false },
                 onProceed = {
                     showCustomPathWarning = false
-                    folderPickerLauncher.launch(null)
+                    DirectoryPickerDialog.show(
+                        activity = this@UnifiedActivity,
+                        initialPath = customPath ?: SteamService.defaultAppInstallPath,
+                        title = getString(R.string.settings_content_install_directory),
+                    ) { path -> customPath = path }
                 },
             )
         }
@@ -7198,7 +7204,11 @@ class UnifiedActivity :
                         if (customPath == null && defaultPathSet) {
                             showCustomPathWarning = true
                         } else {
-                            folderPickerLauncher.launch(null)
+                            DirectoryPickerDialog.show(
+                                activity = this@UnifiedActivity,
+                                initialPath = customPath ?: SteamService.defaultAppInstallPath,
+                                title = getString(R.string.settings_content_install_directory),
+                            ) { path -> customPath = path }
                         }
                     },
                 )
@@ -7213,29 +7223,6 @@ class UnifiedActivity :
             }
         }
     }
-
-    private fun getPathFromTreeUri(uri: Uri): String? =
-        try {
-            val docId = DocumentsContract.getTreeDocumentId(uri)
-            if (docId.startsWith("primary:")) {
-                val path = docId.substringAfter(":")
-                val externalStorage = android.os.Environment.getExternalStorageDirectory()
-                if (path.isEmpty()) externalStorage.path else "${externalStorage.path}/$path"
-            } else if (docId.contains(":")) {
-                val parts = docId.split(":", limit = 2)
-                if (parts.size == 2) {
-                    val volumeId = parts[0]
-                    val path = parts[1]
-                    if (path.isEmpty()) "/storage/$volumeId" else "/storage/$volumeId/$path"
-                } else {
-                    null
-                }
-            } else {
-                docId
-            }
-        } catch (e: Exception) {
-            uri.path
-        }
 
     private fun findLibraryShortcutForGame(
         containerManager: ContainerManager,
@@ -8552,7 +8539,6 @@ class UnifiedActivity :
     private fun ensureGameDrive(
         container: com.winlator.cmod.runtime.container.Container,
         gamePath: String,
-        preferredLetter: String = "F",
     ) {
         container.drives =
             com.winlator.cmod.runtime.wine.WineUtils.normalizePersistentDrives(
@@ -8578,15 +8564,15 @@ class UnifiedActivity :
         val windowsPath =
             container?.let {
                 com.winlator.cmod.runtime.wine.WineUtils
+                    .getDriveCGameWindowsPath(
+                        it,
+                        "CUSTOM",
+                        gameInstallPath,
+                        exeFile.absolutePath,
+                    ) ?: com.winlator.cmod.runtime.wine.WineUtils
                     .getWindowsPath(it, exeFile.absolutePath)
             } ?: run {
-                val relativePath =
-                    try {
-                        exeFile.relativeTo(java.io.File(gameInstallPath)).path.replace("/", "\\")
-                    } catch (_: Exception) {
-                        exeFile.name
-                    }
-                "F:\\$relativePath"
+                com.winlator.cmod.runtime.wine.WineUtils.getDosPath(exeFile.absolutePath)
             }
         return "wine \"$windowsPath\""
     }
@@ -8664,7 +8650,7 @@ class UnifiedActivity :
         // Ensure the custom game folder is mapped into the container.
         val gameFolder = shortcut.getExtra("custom_game_folder", "")
         if (gameFolder.isNotEmpty()) {
-            ensureGameDrive(shortcut.container, gameFolder, "F")
+            ensureGameDrive(shortcut.container, gameFolder)
             shortcut.container.saveData()
         }
         val intent = Intent(context, XServerDisplayActivity::class.java)
@@ -9267,11 +9253,6 @@ class UnifiedActivity :
                 }
             }
 
-        val folderPickerLauncher =
-            rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocumentTree(),
-            ) { uri -> uri?.let { gameFolder = getPathFromTreeUri(it) } }
-
         val defaultDensity = LocalDensity.current
         Dialog(
             onDismissRequest = onDismiss,
@@ -9401,7 +9382,11 @@ class UnifiedActivity :
                                     }
                                     IconButton(onClick = {
                                         if (!ensureAllFilesAccessForImports(context)) return@IconButton
-                                        folderPickerLauncher.launch(null)
+                                        DirectoryPickerDialog.show(
+                                            activity = this@UnifiedActivity,
+                                            initialPath = gameFolder,
+                                            title = getString(R.string.common_ui_select_folder),
+                                        ) { path -> gameFolder = path }
                                     }, modifier = Modifier.size(28.dp)) {
                                         Icon(
                                             Icons.Outlined.Edit,
@@ -9624,12 +9609,7 @@ class UnifiedActivity :
         }
 
         val exeFile = java.io.File(exePath)
-        ensureGameDrive(
-            container,
-            gameFolderPath,
-            com.winlator.cmod.runtime.wine.WineUtils
-                .getPreferredGameDriveLetter(gameFolderPath),
-        )
+        ensureGameDrive(container, gameFolderPath)
         val execCmd = buildWineExecCommand(container, gameFolderPath, exeFile)
 
         // Write .desktop shortcut
