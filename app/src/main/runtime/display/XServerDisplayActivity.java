@@ -364,6 +364,10 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
 
     private SensorManager sensorManager;
     private Sensor gyroSensor;
+    private Sensor gyroRotationSensor;
+    private final float[] gyroRotationMatrix = new float[9];
+    private final float[] gyroRemappedMatrix = new float[9];
+    private final float[] gyroOrientationAngles = new float[3];
     private ExternalController controller;
 
     private long startTime;
@@ -407,11 +411,14 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
     private final SensorEventListener gyroListener = new SensorEventListener() {
         @Override
         public void onSensorChanged(SensorEvent event) {
-            if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
-                float gyroX = event.values[0];
-                float gyroY = event.values[1];
-
-                winHandler.updateGyroData(gyroX, gyroY);
+            if (winHandler == null) {
+                return;
+            }
+            int type = event.sensor.getType();
+            if (type == Sensor.TYPE_GYROSCOPE) {
+                winHandler.updateGyroData(event.values[0], event.values[1]);
+            } else if (type == Sensor.TYPE_GAME_ROTATION_VECTOR) {
+                computeGyroOrientation(event.values);
             }
         }
 
@@ -421,11 +428,11 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
     };
 
     private final SharedPreferences.OnSharedPreferenceChangeListener prefListener = (sharedPreferences, key) -> {
-        if ("gyro_enabled".equals(key) || "mouse_gyro_enabled".equals(key)) {
+        if ("gyro_enabled".equals(key) || "mouse_gyro_enabled".equals(key) || "gyro_orientation_enabled".equals(key)) {
             boolean gyroEnabled = sharedPreferences.getBoolean("gyro_enabled", false);
             if (gyroEnabled) {
-                sensorManager.registerListener(gyroListener, gyroSensor, SensorManager.SENSOR_DELAY_GAME);
-            } else {
+                registerGyroSensorIfEnabled();
+            } else if (sensorManager != null) {
                 sensorManager.unregisterListener(gyroListener);
             }
         } else if ("cursor_speed".equals(key)) {
@@ -444,6 +451,71 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
             }
         }
     };
+
+    // Registers rotation-vector (orientation mode) or gyroscope (rate mode); unregisters first.
+    private void registerGyroSensorIfEnabled() {
+        if (sensorManager == null) {
+            return;
+        }
+        if (!preferences.getBoolean("gyro_enabled", false)) {
+            return;
+        }
+        sensorManager.unregisterListener(gyroListener);
+        boolean orientationMode = preferences.getBoolean("gyro_orientation_enabled", false);
+        boolean mouseMode = preferences.getBoolean("mouse_gyro_enabled", false);
+        // Gyro-mouse is rate-based (needs the gyroscope), so it wins over orientation mode;
+        // orientation uses the rotation vector, falling back to the gyroscope if absent.
+        Sensor sensor =
+                (orientationMode && !mouseMode && gyroRotationSensor != null)
+                        ? gyroRotationSensor
+                        : gyroSensor;
+        if (sensor != null) {
+            sensorManager.registerListener(gyroListener, sensor, SensorManager.SENSOR_DELAY_GAME);
+        }
+    }
+
+    // Rotation-vector sample -> yaw/pitch (radians), remapped for display rotation (landscape).
+    private void computeGyroOrientation(float[] rotationVector) {
+        if (winHandler == null) {
+            return;
+        }
+        SensorManager.getRotationMatrixFromVector(gyroRotationMatrix, rotationVector);
+        int axisX = SensorManager.AXIS_X;
+        int axisY = SensorManager.AXIS_Y;
+        switch (getDisplayRotationForSensors()) {
+            case android.view.Surface.ROTATION_90:
+                axisX = SensorManager.AXIS_Y;
+                axisY = SensorManager.AXIS_MINUS_X;
+                break;
+            case android.view.Surface.ROTATION_180:
+                axisX = SensorManager.AXIS_MINUS_X;
+                axisY = SensorManager.AXIS_MINUS_Y;
+                break;
+            case android.view.Surface.ROTATION_270:
+                axisX = SensorManager.AXIS_MINUS_Y;
+                axisY = SensorManager.AXIS_X;
+                break;
+            default:
+                break;
+        }
+        SensorManager.remapCoordinateSystem(gyroRotationMatrix, axisX, axisY, gyroRemappedMatrix);
+        SensorManager.getOrientation(gyroRemappedMatrix, gyroOrientationAngles);
+        // gyroOrientationAngles = [azimuth(yaw), pitch, roll]
+        winHandler.updateGyroOrientation(gyroOrientationAngles[0], gyroOrientationAngles[1]);
+    }
+
+    private int getDisplayRotationForSensors() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.view.Display display = getDisplay();
+                if (display != null) {
+                    return display.getRotation();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return getWindowManager().getDefaultDisplay().getRotation();
+    }
 
     @Override
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
@@ -847,13 +919,10 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
 
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+        gyroRotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR);
         preferences.registerOnSharedPreferenceChangeListener(prefListener);
 
-        boolean gyroEnabled = preferences.getBoolean("gyro_enabled", false);
-
-        if (gyroEnabled) {
-            sensorManager.registerListener(gyroListener, gyroSensor, SensorManager.SENSOR_DELAY_GAME);
-        }
+        registerGyroSensorIfEnabled();
 
 
 
@@ -2160,11 +2229,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
     public void onResume() {
         super.onResume();
         applyPreferredRefreshRate();
-        boolean gyroEnabled = preferences.getBoolean("gyro_enabled", false);
-
-        if (gyroEnabled) {
-            sensorManager.registerListener(gyroListener, gyroSensor, SensorManager.SENSOR_DELAY_GAME);
-        }
+        registerGyroSensorIfEnabled();
 
         boolean cleaningUp = exitRequested.get() || sessionCleanupStarted.get() || activityDestroyed.get();
 
@@ -3747,13 +3812,14 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                 hudCardExpanded,
                 preferences.getBoolean("gyro_enabled", false),
                 preferences.getInt("gyro_mode", 0),
+                preferences.getBoolean("gyro_orientation_enabled", false),
                 currentGyroActivatorLabel(),
                 preferences.getBoolean("process_gyro_with_left_trigger", false),
                 preferences.getBoolean("mouse_gyro_enabled", false),
                 preferences.getFloat("gyro_mouse_scale", 50.0f),
                 preferences.getFloat("gyro_x_sensitivity", 1.0f),
                 preferences.getFloat("gyro_y_sensitivity", 1.0f),
-                preferences.getFloat("gyro_smoothing", 0.9f),
+                preferences.getFloat("gyro_smoothing", 0.1f),
                 preferences.getFloat("gyro_deadzone", 0.05f),
                 preferences.getBoolean("invert_gyro_x", false),
                 preferences.getBoolean("invert_gyro_y", false),
@@ -3849,6 +3915,14 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                     @Override
                     public void onGyroscopeModeSelected(int mode) {
                         preferences.edit().putInt("gyro_mode", mode).apply();
+                        renderDrawerMenu();
+                    }
+
+                    @Override
+                    public void onGyroOrientationModeChanged(boolean enabled) {
+                        preferences.edit().putBoolean("gyro_orientation_enabled", enabled).apply();
+                        // Swap the active sensor (rate <-> orientation) live.
+                        registerGyroSensorIfEnabled();
                         renderDrawerMenu();
                     }
 
@@ -4570,6 +4644,7 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
         switch (itemId) {
             case R.id.main_menu_gyroscope_reset:
                 if (winHandler != null) {
+                    winHandler.recenterGyroOrientation();
                     winHandler.updateGyroData(0, 0);
                 }
                 break;

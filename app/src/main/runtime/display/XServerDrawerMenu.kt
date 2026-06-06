@@ -307,13 +307,14 @@ data class XServerDrawerState(
     val hudCardExpanded: Boolean = false,
     val gyroscopeEnabled: Boolean = false,
     val gyroscopeModeIndex: Int = 0,
+    val gyroOrientationEnabled: Boolean = false,
     val gyroscopeActivatorLabel: String = "",
     val rightStickGyroEnabled: Boolean = false,
     val gyroMouseEnabled: Boolean = false,
     val gyroMouseScale: Float = 50.0f,
     val gyroXSensitivity: Float = 1.0f,
     val gyroYSensitivity: Float = 1.0f,
-    val gyroSmoothing: Float = 0.9f,
+    val gyroSmoothing: Float = 0.1f,
     val gyroDeadzone: Float = 0.05f,
     val invertGyroX: Boolean = false,
     val invertGyroY: Boolean = false,
@@ -474,6 +475,8 @@ interface XServerDrawerActionListener {
 
     fun onGyroscopeModeSelected(mode: Int)
 
+    fun onGyroOrientationModeChanged(enabled: Boolean)
+
     fun onGyroscopeActivatorSelected(keycode: Int)
 
     fun onRightStickGyroChanged(enabled: Boolean)
@@ -570,13 +573,14 @@ fun buildXServerDrawerState(
     hudCardExpanded: Boolean = false,
     gyroscopeEnabled: Boolean = false,
     gyroscopeModeIndex: Int = 0,
+    gyroOrientationEnabled: Boolean = false,
     gyroscopeActivatorLabel: String = "",
     rightStickGyroEnabled: Boolean = false,
     gyroMouseEnabled: Boolean = false,
     gyroMouseScale: Float = 50.0f,
     gyroXSensitivity: Float = 1.0f,
     gyroYSensitivity: Float = 1.0f,
-    gyroSmoothing: Float = 0.9f,
+    gyroSmoothing: Float = 0.1f,
     gyroDeadzone: Float = 0.05f,
     invertGyroX: Boolean = false,
     invertGyroY: Boolean = false,
@@ -739,6 +743,7 @@ fun buildXServerDrawerState(
         hudCardExpanded = hudCardExpanded,
         gyroscopeEnabled = gyroscopeEnabled,
         gyroscopeModeIndex = gyroscopeModeIndex,
+        gyroOrientationEnabled = gyroOrientationEnabled,
         gyroscopeActivatorLabel = gyroscopeActivatorLabel,
         rightStickGyroEnabled = rightStickGyroEnabled,
         gyroMouseEnabled = gyroMouseEnabled,
@@ -1640,6 +1645,12 @@ private fun GyroscopePaneContent(
                     }
                 }
 
+                DrawerBooleanRow(
+                    title = stringResource(R.string.session_gyroscope_orientation_mode),
+                    checked = state.gyroOrientationEnabled,
+                    onCheckedChange = listener::onGyroOrientationModeChanged,
+                )
+
                 Column(verticalArrangement = Arrangement.spacedBy((8f * paneScale).dp)) {
                     PaneSectionLabel(stringResource(R.string.session_gyroscope_activator_button))
                     GyroscopeActivatorDropdown(
@@ -1678,19 +1689,19 @@ private fun GyroscopePaneContent(
                 ) {
                     DrawerSliderRow(
                         label = stringResource(R.string.session_gyroscope_x_sensitivity),
-                        valueText = "${(state.gyroXSensitivity * 100).toInt()}%",
+                        valueText = "${(state.gyroXSensitivity * 100).roundToInt()}%",
                         value = state.gyroXSensitivity,
-                        valueRange = 0f..2f,
-                        steps = 199,
+                        valueRange = 0.01f..3f,
+                        steps = 0,
                         onValueChange = { listener.onGyroXSensitivityChanged(it) },
                     )
 
                     DrawerSliderRow(
                         label = stringResource(R.string.session_gyroscope_y_sensitivity),
-                        valueText = "${(state.gyroYSensitivity * 100).toInt()}%",
+                        valueText = "${(state.gyroYSensitivity * 100).roundToInt()}%",
                         value = state.gyroYSensitivity,
-                        valueRange = 0f..2f,
-                        steps = 199,
+                        valueRange = 0.01f..3f,
+                        steps = 0,
                         onValueChange = { listener.onGyroYSensitivityChanged(it) },
                     )
 
