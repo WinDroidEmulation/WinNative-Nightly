@@ -278,6 +278,10 @@
     <string name="shortcuts_list_clone_failed">Échec du clonage du raccourci.</string>
     <string name="shortcuts_list_exported_to">Raccourci exporté vers %1$s</string>
     <string name="shortcuts_list_failed_export">Échec de l\'exportation du raccourci</string>
+    <string name="shortcuts_export_all">Tout exporter</string>
+    <string name="shortcuts_export_to_frontend">Exporter vers le frontend</string>
+    <string name="shortcuts_export_all_done">%1$d jeux exportés vers %2$s</string>
+    <string name="shortcuts_export_all_none">Aucun jeu à exporter</string>
     <string name="shortcuts_list_added">Raccourci ajouté avec succès.</string>
     <string name="shortcuts_list_failed_add">Échec de l\'ajout du raccourci.</string>
 
@@ -683,6 +687,9 @@ Par ex. <b>META</b> pour la <i>touche META</i>, \n
     <string name="session_gamepad_error_loading_profile">Erreur lors du chargement du profil</string>
 
     <!-- Session > Gyroscope -->
+    <string name="input_controls_auto_hide_section">Commandes tactiles</string>
+    <string name="input_controls_auto_hide_on_controller_title">Masquer automatiquement avec une manette</string>
+    <string name="input_controls_auto_hide_on_controller_summary">Masquer les commandes tactiles lorsqu\'une manette est connectée</string>
     <string name="session_gyroscope_title">Gyroscope</string>
     <string name="session_gyroscope_calibrate">Calibrer le gyroscope</string>
     <string name="session_gyroscope_enable_right_stick">Activer le mouvement gyroscopique du stick droit</string>

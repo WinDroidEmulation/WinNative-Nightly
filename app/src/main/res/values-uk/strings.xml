@@ -282,6 +282,10 @@
     <string name="shortcuts_list_clone_failed">Не вдалося клонувати ярлик.</string>
     <string name="shortcuts_list_exported_to">Ярлик експортовано до %1$s</string>
     <string name="shortcuts_list_failed_export">Не вдалося експортувати ярлик</string>
+    <string name="shortcuts_export_all">Експортувати все</string>
+    <string name="shortcuts_export_to_frontend">Експортувати до фронтенду</string>
+    <string name="shortcuts_export_all_done">Експортовано %1$d ігор до %2$s</string>
+    <string name="shortcuts_export_all_none">Немає ігор для експорту</string>
     <string name="shortcuts_list_added">Ярлик успішно додано.</string>
     <string name="shortcuts_list_failed_add">Не вдалося додати ярлик.</string>
 
@@ -689,6 +693,9 @@
     <string name="session_gamepad_error_loading_profile">Помилка завантаження профілю</string>
 
     <!-- Session > Gyroscope -->
+    <string name="input_controls_auto_hide_section">Сенсорне керування</string>
+    <string name="input_controls_auto_hide_on_controller_title">Автоприховування з контролером</string>
+    <string name="input_controls_auto_hide_on_controller_summary">Приховувати сенсорне керування, коли під\'єднано контролер</string>
     <string name="session_gyroscope_title">Гіроскоп</string>
     <string name="session_gyroscope_calibrate">Калібрувати гіроскоп</string>
     <string name="session_gyroscope_enable_right_stick">Увімкнути гіроскопічний рух правого стіка</string>

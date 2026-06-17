@@ -304,6 +304,10 @@
     <string name="shortcuts_list_clone_failed">Не удалось клонировать ярлык.</string>
     <string name="shortcuts_list_exported_to">Ярлык экспортирован в %1$s.</string>
     <string name="shortcuts_list_failed_export">Не удалось экспортировать ярлык.</string>
+    <string name="shortcuts_export_all">Экспортировать все</string>
+    <string name="shortcuts_export_to_frontend">Экспорт во фронтенд</string>
+    <string name="shortcuts_export_all_done">Экспортировано %1$d игр в %2$s</string>
+    <string name="shortcuts_export_all_none">Нет игр для экспорта</string>
     <string name="shortcuts_list_added">Ярлык успешно добавлен.</string>
     <string name="shortcuts_list_readded_existing">Повторно добавлен существующий ярлык</string>
     <string name="shortcuts_list_failed_add">Не удалось добавить ярлык.</string>
@@ -748,6 +752,9 @@
     <string name="session_gamepad_no_profiles">-- Нет профилей --</string>
     <string name="session_gamepad_error_loading_profile">Ошибка загрузки профиля.</string>
     <!-- Session > Gyroscope -->
+    <string name="input_controls_auto_hide_section">Сенсорное управление</string>
+    <string name="input_controls_auto_hide_on_controller_title">Автоскрытие при контроллере</string>
+    <string name="input_controls_auto_hide_on_controller_summary">Скрывать сенсорное управление при подключении контроллера</string>
     <string name="session_gyroscope_title">Гироскоп</string>
     <string name="session_gyroscope_calibrate">Калибровка гироскопа</string>
     <string name="session_gyroscope_enable_right_stick">Включить управление правым стиком через гироскоп</string>

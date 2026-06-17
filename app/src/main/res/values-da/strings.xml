@@ -278,6 +278,10 @@
     <string name="shortcuts_list_clone_failed">Kunne ikke klone genvej.</string>
     <string name="shortcuts_list_exported_to">Genvej eksporteret til %1$s</string>
     <string name="shortcuts_list_failed_export">Kunne ikke eksportere genvej</string>
+    <string name="shortcuts_export_all">Eksportér alle</string>
+    <string name="shortcuts_export_to_frontend">Eksportér til frontend</string>
+    <string name="shortcuts_export_all_done">Eksporterede %1$d spil til %2$s</string>
+    <string name="shortcuts_export_all_none">Ingen spil at eksportere</string>
     <string name="shortcuts_list_added">Genvej tilføjet.</string>
     <string name="shortcuts_list_failed_add">Kunne ikke tilføje genvej.</string>
 
@@ -683,6 +687,9 @@ F.eks. <b>META</b> for <i>META-tast</i>, \n
     <string name="session_gamepad_error_loading_profile">Fejl ved indlæsning af profil</string>
 
     <!-- Session > Gyroscope -->
+    <string name="input_controls_auto_hide_section">Berøringskontroller</string>
+    <string name="input_controls_auto_hide_on_controller_title">Skjul automatisk ved controller</string>
+    <string name="input_controls_auto_hide_on_controller_summary">Skjul skærmkontroller, når en controller er tilsluttet</string>
     <string name="session_gyroscope_title">Gyroskop</string>
     <string name="session_gyroscope_calibrate">Kalibrer gyroskop</string>
     <string name="session_gyroscope_enable_right_stick">Aktiver gyroskopisk bevægelse for højre stick</string>
